@@ -19,9 +19,9 @@ cabal-version:       >=1.10
 
 library
   -- Modules exported by the library.
-  exposed-modules:     Sound.MikMod, Sound.MikMod.Errors, Sound.MikMod.Internal, Sound.MikMod.Types
+  exposed-modules:     Sound.MikMod, Sound.MikMod.Errors, Sound.MikMod.Types, Sound.MikMod.Flags, Sound.MikMod.Synonyms
   -- Modules included in this library but not exported.
-  -- other-modules:       
+  other-modules:       Sound.MikMod.Internal
   
   -- LANGUAGE extensions used by modules in this package.
   other-extensions:    ForeignFunctionInterface, EmptyDataDecls

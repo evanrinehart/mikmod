@@ -4,11 +4,14 @@ module Sound.MikMod.Internal where
 import Foreign
 import Foreign.C.Types
 import Foreign.C.String
-import Sound.MikMod.Types
-import Sound.MikMod.Errors
 import Data.Functor
 import Control.Applicative
 import System.IO.Unsafe
+
+import Sound.MikMod.Synonyms
+import Sound.MikMod.Types
+import Sound.MikMod.Flags
+import Sound.MikMod.Errors
 
 #include "mikmod.h"
 
@@ -25,19 +28,6 @@ foreign import ccall "&md_device"  c_md_device  :: Ptr UWORD
 foreign import ccall "&md_driver"  c_md_driver  :: Ptr (Ptr MDriver)
 foreign import ccall "&md_mixfreq" c_md_mixfreq :: Ptr UWORD
 foreign import ccall "&md_mode"    c_md_mode    :: Ptr UWORD
-
-#{enum DriverModeFlag, DriverModeFlag,
-    DMODE_16BITS,
-    DMODE_STEREO,
-    DMODE_SOFT_SNDFX,
-    DMODE_SOFT_MUSIC,
-    DMODE_HQMIXER,
-    DMODE_FLOAT,
-    DMODE_SURROUND,
-    DMODE_INTERP,
-    DMODE_REVERSE,
-    DMODE_SIMDMIXER,
-    DMODE_NOISEREDUCTION }
 
 foreign import ccall unsafe "mikmod.h MikMod_Active" c_MikMod_Active :: IO BOOL
 foreign import ccall unsafe "mikmod.h MikMod_DisableOutput" c_MikMod_DisableOutput :: IO ()
@@ -99,6 +89,7 @@ foreign import ccall unsafe "mikmod.h Voice_RealVolume" c_Voice_RealVolume :: SB
 
 foreign import ccall unsafe "mikmod.h MikMod_free" c_MikMod_free :: Ptr a -> IO ()
 
+
 marshalMuteOperation :: MuteOperation -> CInt
 marshalMuteOperation MuteInclusive = (#const MUTE_INCLUSIVE)
 marshalMuteOperation MuteExclusive = (#const MUTE_EXCLUSIVE)
@@ -116,6 +107,17 @@ peekModule ptr = ModuleInfo <$>
   (peekCString $ (#ptr MODULE, songname) ptr) <*>
   (peekCString $ (#ptr MODULE, modtype) ptr)
 
+peekSample :: Ptr Sample -> IO SampleInfo
+peekSample ptr = SampleInfo <$>
+  (fromIntegral <$> (peek $ (#ptr SAMPLE, panning) ptr :: IO SWORD)) <*>
+  (fromIntegral <$> (peek $ (#ptr SAMPLE, speed) ptr :: IO ULONG)) <*>
+  (fromIntegral <$> (peek $ (#ptr SAMPLE, volume) ptr :: IO UBYTE)) <*>
+  (expandSampleFlags <$> (peek $ (#ptr SAMPLE, flags) ptr :: IO UWORD)) <*>
+  (expandSampleFlags <$> (peek $ (#ptr SAMPLE, inflags) ptr :: IO UWORD)) <*>
+  (fromIntegral <$> (peek $ (#ptr SAMPLE, length) ptr :: IO ULONG)) <*>
+  (fromIntegral <$> (peek $ (#ptr SAMPLE, loopstart) ptr :: IO ULONG)) <*>
+  (fromIntegral <$> (peek $ (#ptr SAMPLE, loopend) ptr :: IO ULONG))
+
 pokeModuleBPM :: Ptr Module -> Int -> IO ()
 pokeModuleBPM ptr bpm = (#poke MODULE, bpm) ptr (fromIntegral bpm :: UWORD)
 
@@ -125,11 +127,9 @@ pokeSampleVolume ptr vol = (#poke SAMPLE, volume) ptr (fromIntegral vol :: UBYTE
 mikmodGetError :: IO MikModError
 mikmodGetError = fmap unmarshalMikModError (peek c_MikMod_errno)
 
-showMikModError :: MikModError -> String
-showMikModError e = unsafePerformIO $ do
-  ptr <- c_MikMod_strerror (marshalMikModError e)
-  peekCString ptr
-
 sfxCritical :: UBYTE
 sfxCritical = (#const SFX_CRITICAL)
+
+expandSampleFlags :: UWORD -> [SampleFlag]
+expandSampleFlags n = []
 

@@ -1,9 +1,16 @@
 {-# LANGUAGE ForeignFunctionInterface #-}
+{-# LANGUAGE DeriveDataTypeable #-}
 module Sound.MikMod.Errors where
 
 import Foreign.C.Types
+import Data.Typeable
+import Control.Exception
+import System.IO.Unsafe
+import Foreign.C.String
 
 #include <mikmod.h>
+
+foreign import ccall unsafe "mikmod.h MikMod_strerror" c_MikMod_strerror :: CInt -> IO CString
 
 -- | The possible things to be found in MikMod_errno
 data MikModError =
@@ -105,6 +112,19 @@ data MikModError =
   MMErrMax |
   MMErrUnknown CInt
     deriving (Eq, Ord, Show)
+
+newtype MikModException = MikModException MikModError
+  deriving (Eq, Typeable)
+
+instance Show MikModException where
+  show (MikModException e) = "MikModError " ++ describeMikModError e
+
+instance Exception MikModException
+
+describeMikModError :: MikModError -> String
+describeMikModError e = unsafePerformIO $ do
+  ptr <- c_MikMod_strerror (marshalMikModError e)
+  peekCString ptr
 
 marshalMikModError :: MikModError -> CInt
 marshalMikModError e = case e of
