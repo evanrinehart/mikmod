@@ -7,6 +7,7 @@ import Foreign.C.Types
 
 -- | The possible things to be found in MikMod_errno
 data MikModError =
+  MMErrOpeningFile |
   MMErrOutOfMemory |
   MMErrDynamicLinking |
   MMErrSampleTooBig |
@@ -100,11 +101,14 @@ data MikModError =
   MMErrAlsaBuffersize |
   MMErrAlsaPcmStart |
   MMErrAlsaPcmWrite |
-  MMErrAlsaPcmRecover
+  MMErrAlsaPcmRecover |
+  MMErrMax |
+  MMErrUnknown CInt
     deriving (Eq, Ord, Show)
 
 marshalMikModError :: MikModError -> CInt
 marshalMikModError e = case e of
+  MMErrOpeningFile -> (#const MMERR_OPENING_FILE)
   MMErrOutOfMemory -> (#const MMERR_OUT_OF_MEMORY)
   MMErrDynamicLinking -> (#const MMERR_DYNAMIC_LINKING)
   MMErrSampleTooBig -> (#const MMERR_SAMPLE_TOO_BIG)
@@ -199,9 +203,12 @@ marshalMikModError e = case e of
   MMErrAlsaPcmStart -> (#const MMERR_ALSA_PCM_START)
   MMErrAlsaPcmWrite -> (#const MMERR_ALSA_PCM_WRITE)
   MMErrAlsaPcmRecover -> (#const MMERR_ALSA_PCM_RECOVER)
+  MMErrMax -> (#const MMERR_MAX)
+  MMErrUnknown n -> n
 
 unmarshalMikModError :: CInt -> MikModError
 unmarshalMikModError code = case code of
+  (#const MMERR_OPENING_FILE) -> MMErrOpeningFile
   (#const MMERR_OUT_OF_MEMORY) -> MMErrOutOfMemory
   (#const MMERR_DYNAMIC_LINKING) -> MMErrDynamicLinking
   (#const MMERR_SAMPLE_TOO_BIG) -> MMErrSampleTooBig
@@ -296,3 +303,5 @@ unmarshalMikModError code = case code of
   (#const MMERR_ALSA_PCM_START) -> MMErrAlsaPcmStart
   (#const MMERR_ALSA_PCM_WRITE) -> MMErrAlsaPcmWrite
   (#const MMERR_ALSA_PCM_RECOVER) -> MMErrAlsaPcmRecover
+  (#const MMERR_MAX) -> MMErrMax
+  x -> MMErrUnknown x
