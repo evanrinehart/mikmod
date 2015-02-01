@@ -1,18 +1,34 @@
+-- |
+-- Module : Sound.MikMod
+-- License : LGPL3
+-- 
+-- MikMod bindings for Haskell
+
 module Sound.MikMod 
 (
-  -- * Types  
-  ModuleHandle,
-  ModuleInfo(..),
-  SampleHandle,
-  SampleInfo(..),
-  Voice(..),
-  MDriverHandle,
-  MDriverInfo,
-  MuteOperation(..),
-  MikModError(..),
-  MikModException(..),
+  -- * Overview
+  -- $overview
 
-  -- * Core library operations
+  -- * Globals
+  mikmodGetMusicVolume,
+  mikmodSetMusicVolume,
+  mikmodGetPanSep,
+  mikmodSetPanSep,
+  mikmodGetReverb,
+  mikmodSetReverb,
+  mikmodGetSndFXVolume,
+  mikmodSetSndFXVolume,
+  mikmodGetVolume,
+  mikmodSetVolume,
+  mikmodGetDeviceIndex,
+  mikmodSetDeviceIndex,
+  mikmodGetDriver,
+  mikmodGetMixFreq,
+  mikmodSetMixFreq,
+  mikmodGetDriverModeFlags,
+  mikmodSetDriverModeFlags,
+
+  -- * Core Operations
   mikmodGetVersion,
   mikmodGetError,
   mikmodRegisterAllDrivers,
@@ -34,11 +50,11 @@ module Sound.MikMod
   withMikMod,
   peekMDriver,
 
-  -- * Module player operations
+  -- * Module Player Operations
   playerLoad,
   playerLoadSafe,
-  playerLoadCurious,
-  playerLoadCuriousSafe,
+  playerLoadGeneric,
+  playerLoadGenericSafe,
   playerLoadTitle,
   playerStart,
   playerStop,
@@ -62,15 +78,17 @@ module Sound.MikMod
   playerSetTempo,
   peekModule,
 
-  -- * Sample operations
+  -- * Sample Operations
   sampleLoad,
   sampleLoadSafe,
+  sampleLoadGeneric,
+  sampleLoadGenericSafe,
   samplePlay,
   samplePlayCritical,
   sampleFree,
   peekSample,
 
-  -- * Voice operations
+  -- * Voice Operations
   voicePlay,
   voiceStop,
   voiceStopped,
@@ -83,10 +101,31 @@ module Sound.MikMod
   voiceGetPosition,
   voiceRealVolume,
 
+  -- * MReaders
+  newByteStringReader,
+
+  -- * Types  
+  Module,
+  ModuleHandle,
+  ModuleInfo(..),
+  Sample,
+  SampleHandle,
+  SampleInfo(..),
+  Voice(..),
+  MuteOperation(..),
+  CuriousFlag(..),
+  MDriver,
+  MDriverHandle,
+  MDriverInfo,
+  MikModError(..),
+  MikModException(..),
+  
+
 )
 where
 
 import Foreign.Ptr
+import Foreign.Storable
 import Foreign.C.String
 import Data.Functor
 import Control.Applicative
@@ -96,7 +135,118 @@ import Data.Bits
 import Sound.MikMod.Synonyms
 import Sound.MikMod.Types
 import Sound.MikMod.Errors
+import Sound.MikMod.Flags
 import Sound.MikMod.Internal
+import Sound.MikMod.MReader
+
+-- $overview
+--
+-- <http://mikmod.sourceforge.net/ MikMod> is a C library for 
+-- mixing and playing music modules and sound samples. These bindings are
+-- a low level interface to the library so to get a full understanding of how
+-- to use it please refer to the MikMod documentation.
+-- 
+-- The user controls MikMod by manipulating a handful of global variables,
+-- calling API functions, and manipulating fields of the Module and Sample
+-- structure. These bindings only provide convenience wrappers to exactly
+-- these things. Storable instances are not provided to avoid clobbering
+-- fields which are not intended to be written by the client and to encourage
+-- updating particular fields in large structures without a full replacement.
+-- Modifying values of global variables and structure fields is allowed during
+-- playback and will have immediate effect.
+--
+-- MikMod allows loading modules and samples from the file system using a
+-- file path, but more customized loading can be accomplished by using a
+-- MReader structure and the "generic" loading methods.
+
+
+-- | Query the global music volume. It has range 0 to 128 (there are 129 possible
+-- volume levels). The default music volume is 128.
+mikmodGetMusicVolume :: IO Int
+mikmodGetMusicVolume = fromIntegral <$> peek c_md_musicvolume
+
+-- | Set the global music volume. The argument must be in the range 0 to 128.
+mikmodSetMusicVolume :: Int -> IO ()
+mikmodSetMusicVolume v = poke c_md_musicvolume (fromIntegral v)
+
+-- | Query the global stereo separation. It has range 0 to 128 where 0 means
+-- mono sound and 128 means full separation. The default pan sep is 128.
+mikmodGetPanSep :: IO Int
+mikmodGetPanSep = fromIntegral <$> peek c_md_pansep
+
+-- | Set the global stereo separation. The argument must be in the range 0 to 128.
+mikmodSetPanSep :: Int -> IO ()
+mikmodSetPanSep v = poke c_md_pansep (fromIntegral v)
+
+-- | Query the global reverb. It has range 0 to 15 where 0 means no reverb
+-- and 15 means extreme reverb. The default reverb is zero.
+mikmodGetReverb :: IO Int
+mikmodGetReverb = fromIntegral <$> peek c_md_reverb
+
+-- | Set the global reverb. The argument must be in the range 0 to 15.
+mikmodSetReverb :: Int -> IO ()
+mikmodSetReverb v = poke c_md_reverb (fromIntegral v)
+
+-- | Query the global sound effects volume. It has range 0 to 128.
+-- The default sound effects volume is 128.
+mikmodGetSndFXVolume :: IO Int
+mikmodGetSndFXVolume = fromIntegral <$> peek c_md_sndfxvolume
+
+-- | Set the global sound effects volume. The argument must be in the range 0 to 128.
+mikmodSetSndFXVolume :: Int -> IO ()
+mikmodSetSndFXVolume v = poke c_md_sndfxvolume (fromIntegral v)
+
+-- | Query the global overall sound volume. It has range 0 to 128. The default
+-- overall sound volume is 128.
+mikmodGetVolume :: IO Int
+mikmodGetVolume = fromIntegral <$> peek c_md_volume
+
+-- | Set the global overall sound volume. The argument must be in the range 0 to 128.
+mikmodSetVolume :: Int -> IO ()
+mikmodSetVolume v = poke c_md_volume (fromIntegral v)
+
+-- | The selected output driver from the global 1-based list of drivers.
+mikmodGetDeviceIndex :: IO Int
+mikmodGetDeviceIndex = fromIntegral <$> peek c_md_device
+
+-- | Change the selected output driver by specifying a 1-based into into the
+-- global list of drivers. Setting this to zero, the default, means autodetect.
+-- To see the list use 'mikmodInfoDriver'.
+mikmodSetDeviceIndex :: Int -> IO ()
+mikmodSetDeviceIndex i = poke c_md_device (fromIntegral i)
+
+-- | Get a info report of the sound driver currently in use, if any. MikMod
+-- does not expose any functionality via MDriver field manipulation.
+mikmodGetDriver :: IO (Maybe MDriverInfo)
+mikmodGetDriver = do
+  r <- peek c_md_driver
+  if (r == nullPtr)
+    then return Nothing
+    else Just <$> peekMDriver r
+
+-- | Query the mix frequency setting measured in Hertz. Higher values mean
+-- more sound quality and more CPU usage. The default is 44100.
+mikmodGetMixFreq :: IO Int
+mikmodGetMixFreq = fromIntegral <$> peek c_md_mixfreq
+
+-- | Set the mix frequency measured in Hertz. Higher values mean more sound
+-- quality and more CPU usage. Common values are 8000, 11025, 22100, and
+-- 44100. The default is 44100.
+mikmodSetMixFreq :: Int -> IO ()
+mikmodSetMixFreq freq = poke c_md_mixfreq (fromIntegral freq)
+
+-- | Query the current "mode flags". See 'mikmodSetDriverModeFlags'.
+mikmodGetDriverModeFlags :: IO [DriverModeFlag]
+mikmodGetDriverModeFlags = unpackFlags <$> peek c_md_mode
+
+-- | Set the "mode flags". These flags affect sound output in various ways.
+-- For a full explanation of each one see the MikMod docs. Changing DModeInterp,
+-- DModeReverse, or DModeSurround will affect playing immediately. The other
+-- flags will require a reset. The default flags are set to [DModeStereo, DModeSurround,
+-- DMode16Bits, DModeSoftMusic, DModeSoftSndFX].
+mikmodSetDriverModeFlags :: [DriverModeFlag] -> IO ()
+mikmodSetDriverModeFlags flags = poke c_md_mode (packFlags flags)
+
 
 -- | Initialize the MikMod system using an initialization string. An empty
 -- string is acceptable (see MikMod docs for more info). If initialization
@@ -230,39 +380,38 @@ playerGetModule = do
     then return Nothing
     else return (Just ptr)
 
-playerLoadOpt :: FilePath -> Int -> Bool -> IO (Either MikModError ModuleHandle)
-playerLoadOpt path maxChans curious = withCString path $ \cstr -> do
-  ptr <- c_Player_Load cstr (fromIntegral maxChans) (encodeBool curious)
-  if (ptr == nullPtr)
-    then Left <$> mikmodGetError
-    else return (Right ptr)
-
 -- | Load a module from a file. The second argument is the maximum number of channels
 -- to allow. If something goes wrong while loading the module it will throw a MikModError.
-playerLoad :: FilePath -> Int -> IO ModuleHandle
-playerLoad path maxChans = do
-  r <- playerLoadSafe path maxChans
+playerLoad :: FilePath -> Int -> CuriousFlag -> IO ModuleHandle
+playerLoad path maxChans curious = do
+  r <- playerLoadSafe path maxChans curious
   case r of
     Left e    -> throwIO (MikModException e)
     Right mod -> return mod
 
 -- | Same as playerLoad but doesn't throw exceptions.
-playerLoadSafe :: FilePath -> Int -> IO (Either MikModError ModuleHandle)
-playerLoadSafe path maxChans = playerLoadOpt path maxChans False
+playerLoadSafe :: FilePath -> Int -> CuriousFlag -> IO (Either MikModError ModuleHandle)
+playerLoadSafe path maxChans curious = withCString path $ \cstr -> do
+  ptr <- c_Player_Load cstr (fromIntegral maxChans) (marshalCurious curious)
+  if (ptr == nullPtr)
+    then Left <$> mikmodGetError
+    else return (Right ptr)
 
--- | Like 'playerLoad' but will try to play "hidden" tracks after the end of
--- the song. If something goes wrong while loading the module it will
--- throw a MikModError.
-playerLoadCurious :: FilePath -> Int -> IO ModuleHandle
-playerLoadCurious path maxChans = do
-  r <- playerLoadCuriousSafe path maxChans
+-- | Same as playerLoad but loads the module data from the MReader.
+playerLoadGeneric :: MReader -> Int -> CuriousFlag -> IO ModuleHandle
+playerLoadGeneric rd maxChans curious = do
+  r <- playerLoadGenericSafe rd maxChans curious
   case r of
     Left e    -> throwIO (MikModException e)
     Right mod -> return mod
 
--- | Same as 'playerLoadCurious' but doesn't throw exceptions.
-playerLoadCuriousSafe :: FilePath -> Int -> IO (Either MikModError ModuleHandle)
-playerLoadCuriousSafe path maxChans = playerLoadOpt path maxChans True
+-- | Same as playerLoadGeneric but doesn't throw exceptions.
+playerLoadGenericSafe :: MReader -> Int -> CuriousFlag -> IO (Either MikModError ModuleHandle)
+playerLoadGenericSafe rd maxChans curious = withMReader rd $ \rptr -> do
+  mptr <- c_Player_LoadGeneric rptr (fromIntegral maxChans) (marshalCurious curious)
+  if (mptr == nullPtr)
+    then Left <$> mikmodGetError
+    else return (Right mptr)
 
 -- | Load only the title from a module file. Returns Nothing in case there
 -- is no title or an error occurred!
@@ -371,6 +520,23 @@ sampleLoadSafe path = withCString path $ \cstr -> do
     then Left <$> mikmodGetError
     else return (Right ptr)
 
+-- | Same as sampleLoad but read sample data from a MReader.
+sampleLoadGeneric :: MReader -> IO SampleHandle
+sampleLoadGeneric mr = do
+  r <- sampleLoadGenericSafe mr
+  case r of
+    Left e     -> throwIO (MikModException e)
+    Right samp -> return samp
+
+-- | Same as sampleLoadGeneric but doesn't throw exceptions.
+sampleLoadGenericSafe :: MReader -> IO (Either MikModError SampleHandle)
+sampleLoadGenericSafe mr = withMReader mr $ \rptr -> do
+  sptr <- c_Sample_LoadGeneric rptr
+  if (sptr == nullPtr)
+    then Left <$> mikmodGetError
+    else return (Right sptr)
+
+
 -- | Play the given sample from the specified starting position (in samples).
 -- If there aren't enough voices available to do this, it will replace the
 -- oldest non-critical sample currently playing.
@@ -432,16 +598,6 @@ voiceGetPosition v = fromIntegral <$> c_Voice_GetPosition (marshalVoice v)
 -- return zero.
 voiceRealVolume :: Voice -> IO Int
 voiceRealVolume v = fromIntegral <$> c_Voice_RealVolume (marshalVoice v)
-
-
-decodeBool :: BOOL -> Bool
-decodeBool 0 = False
-decodeBool 1 = True
-decodeBool x = error ("decodeBool " ++ show x)
-
-encodeBool :: Num a => Bool -> a
-encodeBool False = 0
-encodeBool True  = 1
 
 mikmodGetString :: IO CString -> IO (Maybe String)
 mikmodGetString query = do

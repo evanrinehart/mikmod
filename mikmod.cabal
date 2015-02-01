@@ -21,13 +21,13 @@ library
   -- Modules exported by the library.
   exposed-modules:     Sound.MikMod, Sound.MikMod.Errors, Sound.MikMod.Types, Sound.MikMod.Flags, Sound.MikMod.Synonyms
   -- Modules included in this library but not exported.
-  other-modules:       Sound.MikMod.Internal
+  other-modules:       Sound.MikMod.Internal Sound.MikMod.MReader
   
   -- LANGUAGE extensions used by modules in this package.
   other-extensions:    ForeignFunctionInterface, EmptyDataDecls
   
   -- Other library packages from which modules are imported.
-  build-depends:       base >=4.7 && <4.8
+  build-depends:       base >=4.7 && <4.8, bytestring
   
   -- Directories containing source files.
   -- hs-source-dirs:      

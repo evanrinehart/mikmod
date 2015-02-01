@@ -1,6 +1,14 @@
 {-# LANGUAGE ForeignFunctionInterface #-}
 {-# LANGUAGE DeriveDataTypeable #-}
-module Sound.MikMod.Errors where
+module Sound.MikMod.Errors (
+  MikModError(..),
+  getErrno,
+  describeMikModError,
+  MikModException(..),
+  MikModErrno(..),
+  marshalMikModErrno,
+  unmarshalMikModErrno,
+) where
 
 import Foreign.C.Types
 import Data.Typeable
@@ -12,8 +20,20 @@ import Foreign.C.String
 
 foreign import ccall unsafe "mikmod.h MikMod_strerror" c_MikMod_strerror :: CInt -> IO CString
 
--- | The possible things to be found in MikMod_errno
+-- | A MikMod reports errors as either critical or not. A critical error means
+-- the system state was reset because it could not continue in the face of the
+-- error.
 data MikModError =
+  NonCritical MikModErrno |
+  Critical MikModErrno
+    deriving (Eq, Show)
+
+getErrno :: MikModError -> MikModErrno
+getErrno (Critical e)    = e
+getErrno (NonCritical e) = e
+
+-- | The possible things to be found in MikMod_errno
+data MikModErrno =
   MMErrOpeningFile |
   MMErrOutOfMemory |
   MMErrDynamicLinking |
@@ -123,11 +143,15 @@ instance Exception MikModException
 
 describeMikModError :: MikModError -> String
 describeMikModError e = unsafePerformIO $ do
-  ptr <- c_MikMod_strerror (marshalMikModError e)
-  peekCString ptr
+  let errno = getErrno e
+  msg <- peekCString =<< c_MikMod_strerror (marshalMikModErrno errno)
+  case e of
+    Critical _ -> return $ "*critical* " ++ msg
+    NonCritical _ -> return msg
+    
 
-marshalMikModError :: MikModError -> CInt
-marshalMikModError e = case e of
+marshalMikModErrno :: MikModErrno -> CInt
+marshalMikModErrno e = case e of
   MMErrOpeningFile -> (#const MMERR_OPENING_FILE)
   MMErrOutOfMemory -> (#const MMERR_OUT_OF_MEMORY)
   MMErrDynamicLinking -> (#const MMERR_DYNAMIC_LINKING)
@@ -226,8 +250,8 @@ marshalMikModError e = case e of
   MMErrMax -> (#const MMERR_MAX)
   MMErrUnknown n -> n
 
-unmarshalMikModError :: CInt -> MikModError
-unmarshalMikModError code = case code of
+unmarshalMikModErrno :: CInt -> MikModErrno
+unmarshalMikModErrno code = case code of
   (#const MMERR_OPENING_FILE) -> MMErrOpeningFile
   (#const MMERR_OUT_OF_MEMORY) -> MMErrOutOfMemory
   (#const MMERR_DYNAMIC_LINKING) -> MMErrDynamicLinking

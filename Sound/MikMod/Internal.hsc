@@ -12,6 +12,7 @@ import Sound.MikMod.Synonyms
 import Sound.MikMod.Types
 import Sound.MikMod.Flags
 import Sound.MikMod.Errors
+import Sound.MikMod.MReader
 
 #include "mikmod.h"
 
@@ -52,6 +53,7 @@ foreign import ccall unsafe "mikmod.h Player_Free" c_Player_Free :: Ptr Module -
 foreign import ccall unsafe "mikmod.h Player_GetChannelVoice" c_Player_GetChannelVoice :: UBYTE -> IO SBYTE
 foreign import ccall unsafe "mikmod.h Player_GetModule" c_Player_GetModule :: IO (Ptr Module)
 foreign import ccall unsafe "mikmod.h Player_Load" c_Player_Load :: CString -> CInt -> CInt -> IO (Ptr Module)
+foreign import ccall unsafe "mikmod.h Player_LoadGeneric" c_Player_LoadGeneric :: Ptr MREADER -> CInt -> CInt -> IO (Ptr Module)
 foreign import ccall unsafe "mikmod.h Player_LoadTitle" c_Player_LoadTitle :: CString -> IO CString
 foreign import ccall unsafe "mikmod.h Player_Mute" c_Player_MuteChannel :: CInt -> IO ()
 foreign import ccall unsafe "mikmod.h Player_Mute" c_Player_MuteChannels :: CInt -> CInt -> CInt -> IO ()
@@ -73,6 +75,7 @@ foreign import ccall unsafe "mikmod.h Player_Unmute" c_Player_UnmuteChannels :: 
 
 foreign import ccall unsafe "mikmod.h Sample_Free" c_Sample_Free :: Ptr Sample -> IO ()
 foreign import ccall unsafe "mikmod.h Sample_Load" c_Sample_Load :: CString -> IO (Ptr Sample)
+foreign import ccall unsafe "mikmod.h Sample_LoadGeneric" c_Sample_LoadGeneric :: Ptr MREADER -> IO (Ptr Sample)
 foreign import ccall unsafe "mikmod.h Sample_Play" c_Sample_Play :: Ptr Sample -> ULONG -> UBYTE -> IO SBYTE
 
 foreign import ccall unsafe "mikmod.h Voice_SetVolume" c_Voice_SetVolume :: SBYTE -> UWORD -> IO ()
@@ -112,8 +115,8 @@ peekSample ptr = SampleInfo <$>
   (fromIntegral <$> (peek $ (#ptr SAMPLE, panning) ptr :: IO SWORD)) <*>
   (fromIntegral <$> (peek $ (#ptr SAMPLE, speed) ptr :: IO ULONG)) <*>
   (fromIntegral <$> (peek $ (#ptr SAMPLE, volume) ptr :: IO UBYTE)) <*>
-  (expandSampleFlags <$> (peek $ (#ptr SAMPLE, flags) ptr :: IO UWORD)) <*>
-  (expandSampleFlags <$> (peek $ (#ptr SAMPLE, inflags) ptr :: IO UWORD)) <*>
+  (unpackFlags <$> (peek $ (#ptr SAMPLE, flags) ptr :: IO UWORD)) <*>
+  (unpackFlags <$> (peek $ (#ptr SAMPLE, inflags) ptr :: IO UWORD)) <*>
   (fromIntegral <$> (peek $ (#ptr SAMPLE, length) ptr :: IO ULONG)) <*>
   (fromIntegral <$> (peek $ (#ptr SAMPLE, loopstart) ptr :: IO ULONG)) <*>
   (fromIntegral <$> (peek $ (#ptr SAMPLE, loopend) ptr :: IO ULONG))
@@ -125,11 +128,19 @@ pokeSampleVolume :: SampleHandle -> Int -> IO ()
 pokeSampleVolume ptr vol = (#poke SAMPLE, volume) ptr (fromIntegral vol :: UBYTE)
 
 mikmodGetError :: IO MikModError
-mikmodGetError = fmap unmarshalMikModError (peek c_MikMod_errno)
+mikmodGetError = do
+  errno <- unmarshalMikModErrno <$> peek c_MikMod_errno
+  crit  <- decodeBool <$> peek c_MikMod_critical
+  if crit
+    then return (Critical errno)
+    else return (NonCritical errno)
 
 sfxCritical :: UBYTE
 sfxCritical = (#const SFX_CRITICAL)
 
-expandSampleFlags :: UWORD -> [SampleFlag]
-expandSampleFlags n = []
+marshalCurious :: Num a => CuriousFlag -> a
+marshalCurious Curious = 1
+marshalCurious NotCurious = 0
+
+
 
