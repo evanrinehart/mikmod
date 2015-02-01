@@ -1,10 +1,11 @@
 {-# LANGUAGE ForeignFunctionInterface #-}
-module MikMod.Errors where
+module Sound.MikMod.Errors where
 
 import Foreign.C.Types
 
 #include <mikmod.h>
 
+-- | The possible things to be found in MikMod_errno
 data MikModError =
   MMErrOutOfMemory |
   MMErrDynamicLinking |
