@@ -1,5 +1,5 @@
 {-# LANGUAGE ForeignFunctionInterface #-}
-module Sound.MikMod.Error where
+module MikMod.Errors where
 
 import Foreign.C.Types
 
