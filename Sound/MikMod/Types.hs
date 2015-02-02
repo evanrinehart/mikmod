@@ -86,7 +86,7 @@ data MReader = MReader
     -- Return True if an error occurred or False otherwise. EOF is not an error.
   , readerRead :: Ptr Word8 -> Int -> IO Bool
     -- | Return one byte and advance the read position. If an error occurs or
-    -- we are at the end-of-stream, then return eof.
+    -- we are at the end-of-stream, then return 'eof'.
   , readerGet  :: IO Int
     -- | Return True if we are at the end of the stream. Otherwise return False.
   , readerEof  :: IO Bool }

@@ -13,7 +13,7 @@ import System.IO
 import Data.IORef (newIORef, readIORef, writeIORef, modifyIORef)
 import Data.Functor ((<$>))
 import Control.Monad (when)
-import Control.Exception (finally)
+import Control.Exception (finally, try)
 
 import Sound.MikMod.Synonyms
 import Sound.MikMod.Types
@@ -35,8 +35,12 @@ foreign import ccall "wrapper" mkRead :: ReadFn -> IO (FunPtr ReadFn)
 foreign import ccall "wrapper" mkGet  :: GetFn  -> IO (FunPtr GetFn)
 foreign import ccall "wrapper" mkEof  :: EofFn  -> IO (FunPtr EofFn)
 
-eof :: Num a => a
-eof = (#const EOF)
+-- | To be returned by a readerGet if called at end-of-stream.
+eof :: Int
+eof = genericEof
+
+genericEof :: Num a => a
+genericEof = (#const EOF)
 
 unmarshalSeekMode :: CInt -> SeekMode
 unmarshalSeekMode n = case n of
@@ -80,7 +84,7 @@ withMReader mr action = allocaBytes (#size MREADER) $ \ptr -> do
     freeHaskellFunPtr fp4
     freeHaskellFunPtr fp5
 
--- | Create a MReader from a ByteString.
+-- | Create an MReader from a ByteString. 
 newByteStringReader :: ByteString -> IO MReader
 newByteStringReader bs = do
   let len = BS.length bs
@@ -114,3 +118,33 @@ newByteStringReader bs = do
           then return False
           else return True
     }
+
+
+-- | Wrap a Handle so it works like an MReader.
+newHandleReader :: Handle -> MReader
+newHandleReader h = MReader
+  { readerSeek = \n whence -> do
+      result <- try (hSeek h whence (fromIntegral n)) :: IO (Either IOError ())
+      case result of
+        Left _  -> return (-1)
+        Right _ -> return 0
+  , readerTell = fromIntegral <$> hTell h
+  , readerRead = \to n -> do
+      result <- try (BS.hGet h n) :: IO (Either IOError ByteString)
+      case result of
+        Left _   -> return True
+        Right bs -> do
+          if BS.null bs
+            then return False
+            else do
+              let m = BS.length bs
+              let (bytes, _, _) = toForeignPtr bs
+              withForeignPtr bytes (\from -> memcpy from to (fromIntegral m))
+              return False
+  , readerGet = do
+      bs <- BS.hGet h 1
+      if BS.null bs
+        then return eof
+        else return (fromIntegral . BS.head $ bs)
+  , readerEof = hIsEOF h
+  }

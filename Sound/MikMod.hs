@@ -25,6 +25,7 @@ module Sound.MikMod
   mikmodSetVolume,
   mikmodGetDeviceIndex,
   mikmodSetDeviceIndex,
+  MDriverInfo(..),
   mikmodGetDriver,
   mikmodGetMixFreq,
   mikmodSetMixFreq,
@@ -54,6 +55,7 @@ module Sound.MikMod
   withMikMod,
 
   -- * Module Player Operations
+  CuriousFlag(..),
   playerLoad,
   playerLoadSafe,
   playerLoadGeneric,
@@ -67,6 +69,7 @@ module Sound.MikMod
   playerFree,
   playerGetChannelVoice,
   playerGetModule,
+  MuteOperation(..),
   playerMuteChannel,
   playerMuteChannels,
   playerUnmuteChannel,
@@ -81,6 +84,8 @@ module Sound.MikMod
   playerSetTempo,
 
   -- * Module Operations
+  ModuleHandle,
+  ModuleInfo(..),
   getModuleInfo,
   getModuleRealChannels,
   getModuleTotalChannels,
@@ -116,6 +121,8 @@ module Sound.MikMod
   getModuleSamples,
 
   -- * Sample Operations
+  SampleHandle,
+  SampleInfo(..),
   sampleLoad,
   sampleLoadSafe,
   sampleLoadGeneric,
@@ -124,6 +131,9 @@ module Sound.MikMod
   samplePlayCritical,
   sampleFree,
   getSampleInfo,
+  Pan(..),
+  panLeft,
+  panRight,
   setSamplePanning,
   getSamplePanning,
   setSampleSpeed,
@@ -140,6 +150,7 @@ module Sound.MikMod
   getSampleLoopEnd,
 
   -- * Voice Operations
+  Voice(..),
   voicePlay,
   voiceStop,
   voiceStopped,
@@ -153,22 +164,14 @@ module Sound.MikMod
   voiceRealVolume,
 
   -- * MReaders
+  MReader(..),
   newByteStringReader,
-  --newHandleReader,
+  newHandleReader,
+  eof,
 
-  -- * Types  
-  ModuleHandle,
-  ModuleInfo(..),
-  SampleHandle,
-  SampleInfo(..),
-  Voice(..),
-  MuteOperation(..),
-  CuriousFlag(..),
-  Pan(..),
-  panLeft,
-  panRight,
-  MDriverInfo,
+  -- * Errors
   MikModError(..),
+  describeMikModError,
   MikModException(..),
 
 )
