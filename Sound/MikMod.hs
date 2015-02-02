@@ -362,14 +362,15 @@ mikmodExit = c_MikMod_Exit
 mikmodActive :: IO Bool
 mikmodActive = decodeBool <$> c_MikMod_Active
 
+-- | Enable output. This happens automatically when playing a module. But
+-- according to the examples, mikmodEnableOutput is required before sound
+-- effects will work by themselves.
+mikmodEnableOutput :: IO ()
+mikmodEnableOutput = c_MikMod_EnableOutput
+
 -- | Disable output.
 mikmodDisableOutput :: IO ()
 mikmodDisableOutput = c_MikMod_DisableOutput
-
--- | Reverses the effect of 'mikmodDisableOutput'. This will probably crash
--- if used before MikMod is initialized.
-mikmodEnableOutput :: IO ()
-mikmodEnableOutput = c_MikMod_EnableOutput
 
 -- | Get the MikMod version as (major, minor, revision).
 mikmodGetVersion :: IO (Int, Int, Int)
@@ -441,7 +442,7 @@ mikmodSetNumVoicesSafe music sample = do
 -- out buffer, or sound wont play. In those environments you must call it
 -- more often for higher quality audio (see 'mikmodSetMixFreq').
 --
--- Many audio backends have luckily taken this out of the programmers hands and
+-- Many audio backends have luckily taken this out of the programmer's hands and
 -- so mikmodUpdate may be unnecessary.
 mikmodUpdate :: IO ()
 mikmodUpdate = c_MikMod_Update
@@ -451,9 +452,7 @@ playerActive :: IO Bool
 playerActive = decodeBool <$> c_Player_Active
 
 -- | Free a module and stop it if it is playing. You must discard the ModuleHandle
--- after this operation. Note that modules will be freed automatically when there
--- are no more handles to it. This is convenient, but you must keep a module's
--- handle around if you don't want it to stop playing.
+-- after this operation. 
 playerFree :: ModuleHandle -> IO ()
 playerFree mod = c_Player_Free mod
 
@@ -629,18 +628,24 @@ sampleLoadGenericSafe mr = withMReader mr $ \rptr -> do
 -- | Play the given sample from the specified starting position (in samples).
 -- If there aren't enough voices available to do this, it will replace the
 -- oldest non-critical sample currently playing.
-samplePlay :: SampleHandle -> Int -> IO Voice
-samplePlay samp start = Voice <$> c_Sample_Play samp (fromIntegral start) 0
+samplePlay :: SampleHandle -> Int -> IO (Maybe Voice)
+samplePlay samp start = do
+  v <- c_Sample_Play samp (fromIntegral start) 0
+  if (v >= 0)
+    then (return . Just . Voice) v
+    else return Nothing
 
 -- | This is like 'samplePlay' but the sample will not be interrupted by other
 -- samples played later (unless all voices are being used by critical samples
 -- and yet another critical sample is played).
-samplePlayCritical :: SampleHandle -> Int -> IO Voice
-samplePlayCritical samp start = Voice <$> c_Sample_Play samp (fromIntegral start) sfxCritical
+samplePlayCritical :: SampleHandle -> Int -> IO (Maybe Voice)
+samplePlayCritical samp start = do
+  v <- c_Sample_Play samp (fromIntegral start) sfxCritical
+  if (v >= 0)
+    then (return . Just . Voice) v
+    else return Nothing
 
 -- | Free a sample. You must discard the SampleHandle after this operation.
--- Note that samples will be freed automatically when there are no more
--- handles to it.
 sampleFree :: SampleHandle -> IO ()
 sampleFree samp = c_Sample_Free samp
 
