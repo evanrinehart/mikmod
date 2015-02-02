@@ -6,8 +6,8 @@ name:                mikmod
 -- PVP summary:      +-+------- breaking API changes
 --                   | | +----- non-breaking API additions
 --                   | | | +--- code changes with no API change
-version:             0.1.2.0
-synopsis:            bindings to libmikmod
+version:             0.1.2.1
+synopsis:            MikMod bindings
 description:         MikMod bindings for Haskell
 homepage:            https://github.com/evanrinehart/mikmod
 license:             LGPL
@@ -46,4 +46,4 @@ source-repository head
 source-repository this
   type: git
   location: https://github.com/evanrinehart/mikmod
-  tag: 0.1.2.0
+  tag: 0.1.2.1
