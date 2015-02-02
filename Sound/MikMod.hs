@@ -33,6 +33,7 @@ module Sound.MikMod
   mikmodSetDriverModeFlags,
 
   -- * Core Operations
+  runMikMod,
   mikmodSetup,
   mikmodGetVersion,
   mikmodGetError,
