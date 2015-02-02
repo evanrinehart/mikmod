@@ -351,7 +351,7 @@ mikmodSetDeviceIndex i = poke c_md_device (fromIntegral i)
 mikmodGetDriver :: IO (Maybe MDriverInfo)
 mikmodGetDriver = do
   r <- peek c_md_driver
-  if (r == nullPtr)
+  if r == nullPtr
     then return Nothing
     else Just <$> peekMDriver r
 
@@ -398,7 +398,7 @@ mikmodInit params = do
 mikmodInitSafe :: String -> IO (Either MikModError ())
 mikmodInitSafe params = withCString params $ \ptr -> do
   n <- c_MikMod_Init ptr
-  if (n == 0)
+  if n == 0
     then return (Right ())
     else Left <$> mikmodGetError
 
@@ -482,7 +482,7 @@ mikmodReset params = do
 mikmodResetSafe :: String -> IO (Either MikModError ())
 mikmodResetSafe params = withCString params $ \ptr -> do
   n <- c_MikMod_Reset ptr
-  if (n == 0)
+  if n == 0
     then return (Right ())
     else Left <$> mikmodGetError
 
@@ -499,7 +499,7 @@ mikmodSetNumVoices music sample = do
 mikmodSetNumVoicesSafe :: Int -> Int -> IO (Either MikModError ())
 mikmodSetNumVoicesSafe music sample = do
   n <- c_MikMod_SetNumVoices (fromIntegral music) (fromIntegral sample)
-  if (n == 0)
+  if n == 0
     then return (Right ())
     else Left <$> mikmodGetError
 
@@ -519,13 +519,13 @@ playerActive = decodeBool <$> c_Player_Active
 -- | Free a module and stop it if it is playing. You must discard the ModuleHandle
 -- after this operation. 
 playerFree :: ModuleHandle -> IO ()
-playerFree mod = c_Player_Free mod
+playerFree = c_Player_Free
 
 -- | This function determines the voice corresponding to the specified module channel.
 playerGetChannelVoice :: Int -> IO (Maybe Voice)
 playerGetChannelVoice ch = do
   v <- c_Player_GetChannelVoice (fromIntegral ch)
-  if (v >= 0)
+  if v >= 0
     then return $ Just (Voice v)
     else return Nothing
 
@@ -533,7 +533,7 @@ playerGetChannelVoice ch = do
 playerGetModule :: IO (Maybe ModuleHandle)
 playerGetModule = do
   ptr <- c_Player_GetModule
-  if (ptr == nullPtr)
+  if ptr == nullPtr
     then pure Nothing
     else pure (Just ptr)
 
@@ -550,7 +550,7 @@ playerLoad path maxChans curious = do
 playerLoadSafe :: FilePath -> Int -> CuriousFlag -> IO (Either MikModError ModuleHandle)
 playerLoadSafe path maxChans curious = withCString path $ \cstr -> do
   ptr <- c_Player_Load cstr (fromIntegral maxChans) (marshalCurious curious)
-  if (ptr == nullPtr)
+  if ptr == nullPtr
     then Left <$> mikmodGetError
     else Right <$> pure ptr
 
@@ -566,7 +566,7 @@ playerLoadGeneric rd maxChans curious = do
 playerLoadGenericSafe :: MReader -> Int -> CuriousFlag -> IO (Either MikModError ModuleHandle)
 playerLoadGenericSafe rd maxChans curious = withMReader rd $ \rptr -> do
   mptr <- c_Player_LoadGeneric rptr (fromIntegral maxChans) (marshalCurious curious)
-  if (mptr == nullPtr)
+  if mptr == nullPtr
     then Left <$> mikmodGetError
     else Right <$> pure mptr
 
@@ -621,7 +621,7 @@ playerSetVolume volume = c_Player_SetVolume (fromIntegral volume)
 
 -- | Begin playing the given module.
 playerStart :: ModuleHandle -> IO ()
-playerStart mod = c_Player_Start mod
+playerStart = c_Player_Start
 
 -- | Stop the player.
 playerStop :: IO ()
@@ -669,7 +669,7 @@ sampleLoad path = do
 sampleLoadSafe :: FilePath -> IO (Either MikModError SampleHandle)
 sampleLoadSafe path = withCString path $ \cstr -> do
   ptr <- c_Sample_Load cstr
-  if (ptr == nullPtr)
+  if ptr == nullPtr
     then Left <$> mikmodGetError
     else Right <$> pure ptr
 
@@ -685,7 +685,7 @@ sampleLoadGeneric mr = do
 sampleLoadGenericSafe :: MReader -> IO (Either MikModError SampleHandle)
 sampleLoadGenericSafe mr = withMReader mr $ \rptr -> do
   sptr <- c_Sample_LoadGeneric rptr
-  if (sptr == nullPtr)
+  if sptr == nullPtr
     then Left <$> mikmodGetError
     else Right <$> pure sptr
 
@@ -696,7 +696,7 @@ sampleLoadGenericSafe mr = withMReader mr $ \rptr -> do
 samplePlay :: SampleHandle -> Int -> IO (Maybe Voice)
 samplePlay samp start = do
   v <- c_Sample_Play samp (fromIntegral start) 0
-  if (v >= 0)
+  if v >= 0
     then (return . Just . Voice) v
     else return Nothing
 
@@ -706,13 +706,13 @@ samplePlay samp start = do
 samplePlayCritical :: SampleHandle -> Int -> IO (Maybe Voice)
 samplePlayCritical samp start = do
   v <- c_Sample_Play samp (fromIntegral start) sfxCritical
-  if (v >= 0)
+  if v >= 0
     then (return . Just . Voice) v
     else return Nothing
 
 -- | Free a sample. You must discard the SampleHandle after this operation.
 sampleFree :: SampleHandle -> IO ()
-sampleFree samp = c_Sample_Free samp
+sampleFree = c_Sample_Free
 
 -- | Set a voice's volume, 0 - 256. There are 257 volume levels.
 voiceSetVolume :: Voice -> Int -> IO ()
