@@ -4,8 +4,8 @@ import Foreign.C.Types
 
 type UBYTE = CUChar
 type SBYTE = CChar
-type UWORD = CShort
-type SWORD = CUShort
+type UWORD = CUShort
+type SWORD = CShort
 type ULONG = CUInt
 type SLONG = CInt
 type BOOL = CInt

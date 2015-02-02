@@ -1,6 +1,7 @@
 module Sound.MikMod.Types where
 
 import Foreign.Ptr
+import Foreign.ForeignPtr
 import Foreign.C.Types
 import System.IO
 import Data.Word (Word8)
@@ -26,17 +27,8 @@ data MuteOperation = MuteInclusive | MuteExclusive
 data CuriousFlag = Curious | NotCurious
   deriving (Eq, Show)
 
--- | MDriver is an opaque type that represents a audio driver for audio output.
--- After using mikmodRegisterAllDrivers use mikmodInfoDriver to get a listing
--- of all drivers MikMod has available for your system.
 data MDriver
 
--- | The only thing you can do with a MDriverHandle is peekMDriver to get
--- some basic information provided by MikMod. MDrivers are larely for internal
--- library use only.
-type MDriverHandle = Ptr MDriver
-
--- | Read-only limited view of an MDriver.
 data MDriverInfo = MDriverInfo
   { mdriverName :: String
   , mdriverHardVoiceLimit :: Int
@@ -44,40 +36,32 @@ data MDriverInfo = MDriverInfo
   , mdriverAlias :: String
   } deriving (Show)
 
--- | A Module is an opaque type representing a piece of tracker music.
--- Load modules from the file system with 'playerLoad'.
 data Module
 
--- | MikMod exposes control over how a module is played by expecting the
--- programmer to poke some (but only some) fields in this structure. Use
--- 'peekModule' to get a read-only view the module's fields. Use pokeModule
--- functions to manipulate particular fields relevant to module playback.
--- Manipulating fields of a module has a real-time effect on a playing module.
-type ModuleHandle = Ptr Module
+-- | Handle to a Module object which contains the music data and current
+-- playback state of a song.
+type ModuleHandle = ForeignPtr Module
 
--- | Read-only limited view of a Module.
+-- | Static info about a module.
 data ModuleInfo = ModuleInfo
-  { moduleSongname :: String
-  , moduleModType :: String
-{-  , moduleComment :: String
-  , moduleFlags :: [ModuleFlag]
-  , moduleInstruments :: [String]
-  , moduleSamples :: [Ptr Sample]
-  , moduleBPM :: Int
--}
-  }
+  { moduleSongname       :: String
+  , moduleModType        :: String
+  , moduleComment        :: Maybe String
+  , moduleFlags          :: [ModuleFlag]
+  , moduleNumChannels    :: Int
+  , moduleNumVoices      :: Int
+  , moduleNumPositions   :: Int
+  , moduleNumPatterns    :: Int
+  , moduleNumInstruments :: Int
+  , moduleNumSamples     :: Int
+  , moduleInstruments    :: Maybe [String]
+  } deriving (Show)
 
--- | Sample is an opaque type for an array of audio data.
 data Sample
 
--- | MikMod exposes control over playback of samples by expecting the programmer
--- to manipulate certain fields (but only certain fields) in the Sample structure.
--- Use 'peekSample' to get a read-only view of the sample structure. Use one of
--- the pokeSample operations to manipulate the fields relevant to sample playback.
--- Manipulating a sample changes its characteristics on all voices in real time.
-type SampleHandle = Ptr Sample
+type SampleHandle = ForeignPtr Sample
 
--- | Read-only view of a sample structure.
+-- | Static info about a sample.
 data SampleInfo = SampleInfo
   { samplePanning :: Int
   , sampleSpeed :: Int
@@ -105,3 +89,5 @@ data MReader = MReader
     -- | Return True if we are at the end of the stream. Otherwise return False.
   , readerEof  :: IO Bool }
 
+
+data Instrument

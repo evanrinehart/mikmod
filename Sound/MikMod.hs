@@ -9,6 +9,9 @@ module Sound.MikMod
   -- * Overview
   -- $overview
 
+  -- * Quickstart
+  -- $quickstart
+
   -- * Globals
   mikmodGetMusicVolume,
   mikmodSetMusicVolume,
@@ -48,7 +51,6 @@ module Sound.MikMod
   mikmodExit,
   mikmodInitThreads,
   withMikMod,
-  peekMDriver,
 
   -- * Module Player Operations
   playerLoad,
@@ -76,7 +78,40 @@ module Sound.MikMod
   playerSetPosition,
   playerSetSpeed,
   playerSetTempo,
-  peekModule,
+
+  -- * Module Operations
+  getModuleInfo,
+  getModuleRealChannels,
+  getModuleTotalChannels,
+  getModuleSongTime,
+  getModuleSongPosition,
+  getModulePatternPosition,
+  setModuleInitSpeed,
+  getModuleInitSpeed,
+  setModuleInitTempo,
+  getModuleInitTempo,
+  setModulePanning,
+  getModulePanning,
+  setModuleChannelVolume,
+  getModuleChannelVolume,
+  setModuleBPM,
+  getModuleBPM,
+  setModuleSongSpeed,
+  getModuleSongSpeed,
+  setModuleExtSpeed,
+  getModuleExtSpeed,
+  setModulePanFlag,
+  getModulePanFlag,
+  setModuleWrap,
+  getModuleWrap,
+  setModuleRepeatPosition,
+  getModuleRepeatPosition,
+  setModuleLoop,
+  getModuleLoop,
+  setModuleFadeout,
+  getModuleFadeout,
+  setModuleRelativeSpeed,
+  getModuleRelativeSpeed,
 
   -- * Sample Operations
   sampleLoad,
@@ -86,7 +121,21 @@ module Sound.MikMod
   samplePlay,
   samplePlayCritical,
   sampleFree,
-  peekSample,
+  getSampleInfo,
+  setSamplePanning,
+  getSamplePanning,
+  setSampleSpeed,
+  getSampleSpeed,
+  setSampleVolume,
+  getSampleVolume,
+  setSampleFlags,
+  getSampleFlags,
+  getSampleInFlags,
+  getSampleLength,
+  setSampleLoopStart,
+  getSampleLoopStart,
+  setSampleLoopEnd,
+  getSampleLoopEnd,
 
   -- * Voice Operations
   voicePlay,
@@ -103,28 +152,25 @@ module Sound.MikMod
 
   -- * MReaders
   newByteStringReader,
+  --newHandleReader,
 
   -- * Types  
-  Module,
   ModuleHandle,
   ModuleInfo(..),
-  Sample,
   SampleHandle,
   SampleInfo(..),
   Voice(..),
   MuteOperation(..),
   CuriousFlag(..),
-  MDriver,
-  MDriverHandle,
   MDriverInfo,
   MikModError(..),
   MikModException(..),
-  
 
 )
 where
 
 import Foreign.Ptr
+import Foreign.ForeignPtr
 import Foreign.Storable
 import Foreign.C.String
 import Data.Functor
@@ -142,23 +188,60 @@ import Sound.MikMod.MReader
 -- $overview
 --
 -- <http://mikmod.sourceforge.net/ MikMod> is a C library for 
--- mixing and playing music modules and sound samples. These bindings are
--- a low level interface to the library so to get a full understanding of how
--- to use it please refer to the MikMod documentation.
+-- playing music modules and sound samples.
 -- 
 -- The user controls MikMod by manipulating a handful of global variables,
 -- calling API functions, and manipulating fields of the Module and Sample
--- structure. These bindings only provide convenience wrappers to exactly
--- these things. Storable instances are not provided to avoid clobbering
--- fields which are not intended to be written by the client and to encourage
--- updating particular fields in large structures without a full replacement.
--- Modifying values of global variables and structure fields is allowed during
--- playback and will have immediate effect.
+-- structure. These low-level bindings are basically convenience wrappers for
+-- the above operations.
 --
--- MikMod allows loading modules and samples from the file system using a
--- file path, but more customized loading can be accomplished by using a
--- MReader structure and the "generic" loading methods.
+-- Module objects represent not only music but the playback state of a song.
+-- In this sense you can think of Modules as being like cassette tapes. For
+-- example if a playing module is paused or stopped, and another module begins
+-- playing, then resuming the original module will start from the position it
+-- was stopped at. You manipulate modules only via the type ModuleHandle.
+--
+-- Sample objects represent single sounds. Modules use samples to make music,
+-- but you can use samples independently for sound effects. Samples are similar
+-- to Modules in that they are only accessed via the type SampleHandle.
+--
+-- Music and sound effects both play samples on voices. There can be at most
+-- one sample playing on a voice at a time. Voices can be individually adjusted
+-- to change the characteristics of the samples that play on them. Voices are
+-- exposed by MikMod as indexes. These indexes are wrapped in the Voice newtype.
+-- 
+-- Modifying values of global variables and structure fields is allowed during
+-- playback and in most cases will have immediate effect.
+--
+-- MikMod allows loading modules and samples from the file system or from an
+-- arbitrary source via the MReader structure.
+--
+-- API functions that may fail come in two flavors: one that throws an exception
+-- and one that returns an Either.
+--
+-- The MikMod error callback mechanism and the MWriter are not supported yet.
 
+-- $quickstart
+--
+-- @
+-- import Control.Concurrent (threadDelay)
+-- import Control.Monad.Loops (whileM_)
+-- import Sound.MikMod
+--
+-- main = do
+--   mikmodRegisterAllDrivers
+--   mikmodRegisterAllLoaders
+--   mikmodInit ""
+--   mod <- playerLoad "rock on.mod" 128 NotCurious
+--   playerStart mod
+--   whileM_ playerActive $ do
+--     mikmodUpdate -- might be unnecessary on your system
+--     threadDelay 100000
+--   mikmodExit
+-- @
+--
+-- Make sure to link your program to MikMod with -lmikmod. GHCI can be used to
+-- experiment by using ghci -lmikmod.
 
 -- | Query the global music volume. It has range 0 to 128 (there are 129 possible
 -- volume levels). The default music volume is 128.
@@ -209,7 +292,7 @@ mikmodSetVolume v = poke c_md_volume (fromIntegral v)
 mikmodGetDeviceIndex :: IO Int
 mikmodGetDeviceIndex = fromIntegral <$> peek c_md_device
 
--- | Change the selected output driver by specifying a 1-based into into the
+-- | Change the selected output driver by specifying a 1-based index into the
 -- global list of drivers. Setting this to zero, the default, means autodetect.
 -- To see the list use 'mikmodInfoDriver'.
 mikmodSetDeviceIndex :: Int -> IO ()
@@ -352,10 +435,12 @@ mikmodSetNumVoicesSafe music sample = do
     then return (Right ())
     else Left <$> mikmodGetError
 
--- | Bump MikMod to make it fill its audio output buffer. Must be called
--- periodically for playback to work. To prevent audio dropouts, it must be
--- called more often when the audio quality is higher than when it is lower.
--- You only need to call this while sound is playing.
+-- | On some drivers mikmodUpdate must called periodically to fill an audio
+-- out buffer, or sound wont play. In those environments you must call it
+-- more often for higher quality audio (see 'mikmodSetMixFreq').
+--
+-- Many audio backends have luckily taken this out of the programmers hands and
+-- so mikmodUpdate may be unnecessary.
 mikmodUpdate :: IO ()
 mikmodUpdate = c_MikMod_Update
 
@@ -363,14 +448,20 @@ mikmodUpdate = c_MikMod_Update
 playerActive :: IO Bool
 playerActive = decodeBool <$> c_Player_Active
 
--- | Unload a module and stop it if it is playing. Discard the handle after
--- this operation.
+-- | Free a module and stop it if it is playing. You must discard the ModuleHandle
+-- after this operation. Note that modules will be freed automatically when there
+-- are no more handles to it. This is convenient, but you must keep a module's
+-- handle around if you don't want it to stop playing.
 playerFree :: ModuleHandle -> IO ()
-playerFree ptr = c_Player_Free ptr
+playerFree mod = finalizeForeignPtr mod
 
 -- | This function determines the voice corresponding to the specified module channel.
-playerGetChannelVoice :: Int -> IO Voice
-playerGetChannelVoice ch = Voice <$> c_Player_GetChannelVoice (fromIntegral ch)
+playerGetChannelVoice :: Int -> IO (Maybe Voice)
+playerGetChannelVoice ch = do
+  v <- c_Player_GetChannelVoice (fromIntegral ch)
+  if (v >= 0)
+    then return $ Just (Voice v)
+    else return Nothing
 
 -- | Get the currently playing module, if any.
 playerGetModule :: IO (Maybe ModuleHandle)
@@ -378,7 +469,7 @@ playerGetModule = do
   ptr <- c_Player_GetModule
   if (ptr == nullPtr)
     then return Nothing
-    else return (Just ptr)
+    else Just <$> newForeignPtr c_Player_Free_Ptr ptr
 
 -- | Load a module from a file. The second argument is the maximum number of channels
 -- to allow. If something goes wrong while loading the module it will throw a MikModError.
@@ -395,7 +486,7 @@ playerLoadSafe path maxChans curious = withCString path $ \cstr -> do
   ptr <- c_Player_Load cstr (fromIntegral maxChans) (marshalCurious curious)
   if (ptr == nullPtr)
     then Left <$> mikmodGetError
-    else return (Right ptr)
+    else Right <$> newForeignPtr c_Player_Free_Ptr ptr
 
 -- | Same as playerLoad but loads the module data from the MReader.
 playerLoadGeneric :: MReader -> Int -> CuriousFlag -> IO ModuleHandle
@@ -411,7 +502,7 @@ playerLoadGenericSafe rd maxChans curious = withMReader rd $ \rptr -> do
   mptr <- c_Player_LoadGeneric rptr (fromIntegral maxChans) (marshalCurious curious)
   if (mptr == nullPtr)
     then Left <$> mikmodGetError
-    else return (Right mptr)
+    else Right <$> newForeignPtr c_Player_Free_Ptr mptr
 
 -- | Load only the title from a module file. Returns Nothing in case there
 -- is no title or an error occurred!
@@ -422,8 +513,8 @@ playerLoadTitle path = mikmodGetString (withCString path c_Player_LoadTitle)
 playerMuteChannel :: Int -> IO ()
 playerMuteChannel ch = c_Player_MuteChannel (fromIntegral ch)
 
--- | Mute a range of channels. If MuteInclusive is used it will include
--- all channels within the range. MuteExclusive is the opposite of MuteInclusive.
+-- | Mute a range of channels. MuteOperation determines if the range is
+-- inclusive or exclusive.
 playerMuteChannels :: MuteOperation -> Int -> Int -> IO ()
 playerMuteChannels op chanL chanU = c_Player_MuteChannels
   (marshalMuteOperation op)
@@ -464,7 +555,7 @@ playerSetVolume volume = c_Player_SetVolume (fromIntegral volume)
 
 -- | Begin playing the given module.
 playerStart :: ModuleHandle -> IO ()
-playerStart = c_Player_Start
+playerStart mod = withForeignPtr mod (\ptr -> c_Player_Start ptr)
 
 -- | Stop the player.
 playerStop :: IO ()
@@ -474,9 +565,8 @@ playerStop = c_Player_Stop
 playerToggleMuteChannel :: Int -> IO ()
 playerToggleMuteChannel ch = c_Player_ToggleMuteChannel (fromIntegral ch)
 
--- | Toggle the muting of a range of channels. If MuteInclusive is used this will
--- include all channels in the given range. MuteExclusive is the opposite of
--- MuteInclusive.
+-- | Toggle the muting of a range of channels. MuteOperation determines if the range is
+-- inclusive or exclusive.
 playerToggleMuteChannels :: MuteOperation -> Int -> Int -> IO ()
 playerToggleMuteChannels op chanL chanU = c_Player_ToggleMuteChannels
   (marshalMuteOperation op)
@@ -491,17 +581,14 @@ playerTogglePause = c_Player_TogglePause
 playerUnmuteChannel :: Int -> IO ()
 playerUnmuteChannel ch = c_Player_UnmuteChannel (fromIntegral ch)
 
--- | Unmute a range of channels. If MuteInclusive is used this will include
--- all channels in the given range. MuteExclusive is the opposite of MuteInclusive.
+-- | Toggle the muting of a range of channels. If MuteInclusive is used this will
+-- include all channels in the given range. MuteExclusive is the opposite of
+-- MuteInclusive.
 playerUnmuteChannels :: MuteOperation -> Int -> Int -> IO ()
 playerUnmuteChannels op chanL chanU = c_Player_UnmuteChannels
   (marshalMuteOperation op)
   (fromIntegral chanL)
   (fromIntegral chanU)
-
--- | Unload a sample. Discard the handle after this operation.
-sampleFree :: SampleHandle -> IO ()
-sampleFree = c_Sample_Free
 
 -- | Load a sample from a mono, uncompressed RIFF WAV file. If something
 -- goes wrong while loading the same it will throw a MikModError.
@@ -518,7 +605,7 @@ sampleLoadSafe path = withCString path $ \cstr -> do
   ptr <- c_Sample_Load cstr
   if (ptr == nullPtr)
     then Left <$> mikmodGetError
-    else return (Right ptr)
+    else Right <$> newForeignPtr c_Sample_Free_Ptr ptr
 
 -- | Same as sampleLoad but read sample data from a MReader.
 sampleLoadGeneric :: MReader -> IO SampleHandle
@@ -534,20 +621,28 @@ sampleLoadGenericSafe mr = withMReader mr $ \rptr -> do
   sptr <- c_Sample_LoadGeneric rptr
   if (sptr == nullPtr)
     then Left <$> mikmodGetError
-    else return (Right sptr)
+    else Right <$> newForeignPtr c_Sample_Free_Ptr sptr
 
 
 -- | Play the given sample from the specified starting position (in samples).
 -- If there aren't enough voices available to do this, it will replace the
 -- oldest non-critical sample currently playing.
 samplePlay :: SampleHandle -> Int -> IO Voice
-samplePlay ptr start = Voice <$> c_Sample_Play ptr (fromIntegral start) 0
+samplePlay samp start = withForeignPtr samp $ \ptr -> do
+  Voice <$> c_Sample_Play ptr (fromIntegral start) 0
 
 -- | This is like 'samplePlay' but the sample will not be interrupted by other
 -- samples played later (unless all voices are being used by critical samples
 -- and yet another critical sample is played).
 samplePlayCritical :: SampleHandle -> Int -> IO Voice
-samplePlayCritical ptr start = Voice <$> c_Sample_Play ptr (fromIntegral start) sfxCritical
+samplePlayCritical samp start = withForeignPtr samp $ \ptr -> do
+  Voice <$> c_Sample_Play ptr (fromIntegral start) sfxCritical
+
+-- | Free a sample. You must discard the SampleHandle after this operation.
+-- Note that samples will be freed automatically when there are no more
+-- handles to it.
+sampleFree :: SampleHandle -> IO ()
+sampleFree samp = finalizeForeignPtr samp
 
 -- | Set a voice's volume, 0 - 256. There are 257 volume levels.
 voiceSetVolume :: Voice -> Int -> IO ()
@@ -577,7 +672,8 @@ voiceGetPanning v = fromIntegral <$> c_Voice_GetPanning (marshalVoice v)
 -- | Play a sample on the specified voice. The playing sample will have the
 -- same "critical status" as the previous sample played on this voice.
 voicePlay :: Voice -> SampleHandle -> Int -> IO ()
-voicePlay v samp start = c_Voice_Play (marshalVoice v) samp (fromIntegral start)
+voicePlay v samp start = withForeignPtr samp $ \ptr -> do
+  c_Voice_Play (marshalVoice v) ptr (fromIntegral start)
 
 -- | Stop a voice from playing.
 voiceStop :: Voice -> IO ()

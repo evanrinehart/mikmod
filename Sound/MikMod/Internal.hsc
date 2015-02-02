@@ -50,6 +50,7 @@ foreign import ccall unsafe "mikmod.h MikMod_strerror" c_MikMod_strerror :: CInt
 
 foreign import ccall unsafe "mikmod.h Player_Active" c_Player_Active :: IO CInt
 foreign import ccall unsafe "mikmod.h Player_Free" c_Player_Free :: Ptr Module -> IO ()
+foreign import ccall unsafe "mikmod.h &Player_Free" c_Player_Free_Ptr :: FunPtr (Ptr Module -> IO ())
 foreign import ccall unsafe "mikmod.h Player_GetChannelVoice" c_Player_GetChannelVoice :: UBYTE -> IO SBYTE
 foreign import ccall unsafe "mikmod.h Player_GetModule" c_Player_GetModule :: IO (Ptr Module)
 foreign import ccall unsafe "mikmod.h Player_Load" c_Player_Load :: CString -> CInt -> CInt -> IO (Ptr Module)
@@ -74,6 +75,7 @@ foreign import ccall unsafe "mikmod.h Player_Unmute" c_Player_UnmuteChannel :: C
 foreign import ccall unsafe "mikmod.h Player_Unmute" c_Player_UnmuteChannels :: CInt -> CInt -> CInt -> IO ()
 
 foreign import ccall unsafe "mikmod.h Sample_Free" c_Sample_Free :: Ptr Sample -> IO ()
+foreign import ccall unsafe "mikmod.h &Sample_Free" c_Sample_Free_Ptr :: FunPtr (Ptr Sample -> IO ())
 foreign import ccall unsafe "mikmod.h Sample_Load" c_Sample_Load :: CString -> IO (Ptr Sample)
 foreign import ccall unsafe "mikmod.h Sample_LoadGeneric" c_Sample_LoadGeneric :: Ptr MREADER -> IO (Ptr Sample)
 foreign import ccall unsafe "mikmod.h Sample_Play" c_Sample_Play :: Ptr Sample -> ULONG -> UBYTE -> IO SBYTE
@@ -92,26 +94,63 @@ foreign import ccall unsafe "mikmod.h Voice_RealVolume" c_Voice_RealVolume :: SB
 
 foreign import ccall unsafe "mikmod.h MikMod_free" c_MikMod_free :: Ptr a -> IO ()
 
-
 marshalMuteOperation :: MuteOperation -> CInt
 marshalMuteOperation MuteInclusive = (#const MUTE_INCLUSIVE)
 marshalMuteOperation MuteExclusive = (#const MUTE_EXCLUSIVE)
 
 peekMDriver :: Ptr MDriver -> IO MDriverInfo
 peekMDriver ptr = do
-  name  <- peekCString $ (#ptr MDRIVER, Name) ptr
-  alias <- peekCString $ (#ptr MDRIVER, Alias) ptr
-  hard  <- fromIntegral <$> (peek $ (#ptr MDRIVER, HardVoiceLimit) ptr :: IO CUChar)
-  soft  <- fromIntegral <$> (peek $ (#ptr MDRIVER, SoftVoiceLimit) ptr :: IO CUChar)
+  name  <- peekCString =<< (peek ((#ptr MDRIVER, Name) ptr) :: IO CString)
+  alias <- peekCString =<< (peek ((#ptr MDRIVER, Alias) ptr) :: IO CString)
+  hard  <- fromIntegral <$> (peek ((#ptr MDRIVER, HardVoiceLimit) ptr) :: IO CUChar)
+  soft  <- fromIntegral <$> (peek ((#ptr MDRIVER, SoftVoiceLimit) ptr) :: IO CUChar)
   return $ MDriverInfo name hard soft alias
 
-peekModule :: Ptr Module -> IO ModuleInfo
-peekModule ptr = ModuleInfo <$>
-  (peekCString $ (#ptr MODULE, songname) ptr) <*>
-  (peekCString $ (#ptr MODULE, modtype) ptr)
+-- | Get a report of the static aspects of a module.
+getModuleInfo :: ModuleHandle -> IO ModuleInfo
+getModuleInfo mod = withForeignPtr mod $ \ptr -> ModuleInfo <$>
+  (peekCStringError =<< (peek ((#ptr MODULE, songname) ptr) :: IO CString)) <*>
+  (peekCStringError =<< (peek ((#ptr MODULE, modtype) ptr) :: IO CString)) <*>
+  (peekCStringMaybe =<< (peek ((#ptr MODULE, comment) ptr) :: IO CString)) <*>
+  (unpackFlags <$> (peek ((#ptr MODULE, flags) ptr) :: IO UWORD)) <*>
+  (fromIntegral <$> (peek ((#ptr MODULE, numchn) ptr) :: IO UBYTE)) <*>
+  (fromIntegral <$> (peek ((#ptr MODULE, numvoices) ptr) :: IO UBYTE)) <*>
+  (fromIntegral <$> (peek ((#ptr MODULE, numpos) ptr) :: IO UWORD)) <*>
+  (fromIntegral <$> (peek ((#ptr MODULE, numpat) ptr) :: IO UWORD)) <*>
+  (fromIntegral <$> (peek ((#ptr MODULE, numins) ptr) :: IO UWORD)) <*>
+  (fromIntegral <$> (peek ((#ptr MODULE, numsmp) ptr) :: IO UWORD)) <*>
+  unpackInstrumentNames ptr
 
-peekSample :: Ptr Sample -> IO SampleInfo
-peekSample ptr = SampleInfo <$>
+peekCStringMaybe :: CString -> IO (Maybe String)
+peekCStringMaybe cstr | cstr == nullPtr = return Nothing
+                      | otherwise = Just <$> peekCString cstr
+
+peekCStringError :: CString -> IO String
+peekCStringError cstr | cstr == nullPtr = error "peekCStringError NULL"
+                      | otherwise = peekCString cstr
+
+unpackInstrumentNames :: Ptr Module -> IO (Maybe [String])
+unpackInstrumentNames mod = do
+  n <- fromIntegral <$> (peek ((#ptr MODULE, numins) mod) :: IO UWORD)
+  ins0 <- peek ((#ptr MODULE, instruments) mod) :: IO (Ptr Instrument)
+  if (ins0 == nullPtr)
+    then return Nothing
+    else do
+      let ptrs = map (\i -> ins0 `plusPtr` (sizeOfInstrument * i)) [0..n-1]
+      Just <$> mapM getInstrumentName ptrs
+  
+getInstrumentName :: Ptr Instrument -> IO String
+getInstrumentName ptr = peekCString =<< (peek ((#ptr INSTRUMENT, insname) ptr) :: IO CString)
+
+sizeOfInstrument :: Int
+sizeOfInstrument = (#size INSTRUMENT)
+
+getModuleSamples :: ModuleHandle -> IO [SampleHandle]
+getModuleSamples fptr = undefined
+
+-- | Get a report of the current state of a sample.
+getSampleInfo :: SampleHandle -> IO SampleInfo
+getSampleInfo samp = withForeignPtr samp $ \ptr -> SampleInfo <$>
   (fromIntegral <$> (peek $ (#ptr SAMPLE, panning) ptr :: IO SWORD)) <*>
   (fromIntegral <$> (peek $ (#ptr SAMPLE, speed) ptr :: IO ULONG)) <*>
   (fromIntegral <$> (peek $ (#ptr SAMPLE, volume) ptr :: IO UBYTE)) <*>
@@ -125,8 +164,13 @@ pokeModuleBPM :: Ptr Module -> Int -> IO ()
 pokeModuleBPM ptr bpm = (#poke MODULE, bpm) ptr (fromIntegral bpm :: UWORD)
 
 pokeSampleVolume :: SampleHandle -> Int -> IO ()
-pokeSampleVolume ptr vol = (#poke SAMPLE, volume) ptr (fromIntegral vol :: UBYTE)
+pokeSampleVolume fptr vol = withForeignPtr fptr $ \ptr -> do
+  (#poke SAMPLE, volume) ptr (fromIntegral vol :: UBYTE)
 
+-- | Query the current MikMod global errno and get the MikModError expressed
+-- there, if any. This value is only valid if checked immediately after an
+-- error occurs. If you are interested in MikModErrors use the "Safe" versions
+-- of the API methods which return an Either MikModError.
 mikmodGetError :: IO MikModError
 mikmodGetError = do
   errno <- unmarshalMikModErrno <$> peek c_MikMod_errno
