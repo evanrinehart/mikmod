@@ -110,7 +110,7 @@ peekMDriver ptr = do
 
 -- | Query the current MikMod global errno and get the MikModError expressed
 -- there, if any. This value is only valid if checked immediately after an
--- error occurs. If you are interested in MikModErrors use the "Safe" versions
+-- error occurs. If you are interested in MikModErrors use the ""Safe"" versions
 -- of the API methods which return an Either MikModError.
 mikmodGetError :: IO MikModError
 mikmodGetError = do

@@ -11,13 +11,11 @@ import Sound.MikMod.Flags
 -- | MikMod distinguishes module channels from voices. Sound effects and music
 -- both work by playing samples on voices. At most one sample can play on a
 -- voice at a time. Operations on the voice level take a voice number which you
--- can get using mikmodGetChannelVoice.
+-- can get using 'Sound.MikMod.playerGetChannelVoice' and 'Sound.MikMod.samplePlay'.
 newtype Voice = Voice { marshalVoice :: SBYTE }
   deriving (Eq, Ord, Show)
 
--- | Operations that manipulate muting of multiple channels use one of two
--- interpretations of the specified channge range. MuteExclusive means mute /
--- unmute / toggle muting of all channels outside the specified range.
+-- | Inclusive or exclusive selection of channels for muting.
 data MuteOperation = MuteInclusive | MuteExclusive
   deriving (Eq, Show)
 
@@ -65,14 +63,14 @@ type SampleHandle = Ptr Sample
 
 -- | Static info about a sample.
 data SampleInfo = SampleInfo
-  { samplePanning :: Pan
-  , sampleSpeed :: Int
-  , sampleVolume :: Int
-  , sampleFlags :: [SampleFlag]
-  , sampleInflags :: [SampleFlag]
-  , sampleLength :: Int
+  { samplePanning   :: Pan
+  , sampleSpeed     :: Int
+  , sampleVolume    :: Int
+  , sampleFlags     :: [SampleFlag]
+  , sampleInflags   :: [SampleFlag]
+  , sampleLength    :: Int
   , sampleLoopStart :: Int
-  , sampleLoopEnd :: Int
+  , sampleLoopEnd   :: Int
   } deriving (Show)
 
 -- | Collection of IO operations that MikMod can use to load data from an
@@ -86,7 +84,7 @@ data MReader = MReader
     -- Return True if an error occurred or False otherwise. EOF is not an error.
   , readerRead :: Ptr Word8 -> Int -> IO Bool
     -- | Return one byte and advance the read position. If an error occurs or
-    -- we are at the end-of-stream, then return 'eof'.
+    -- we are at the end-of-stream, then return 'Sound.MikMod.eof'.
   , readerGet  :: IO Int
     -- | Return True if we are at the end of the stream. Otherwise return False.
   , readerEof  :: IO Bool }

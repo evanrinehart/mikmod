@@ -13,22 +13,24 @@ module Sound.MikMod
   -- $quickstart
 
   -- * Globals
-  mikmodGetMusicVolume,
   mikmodSetMusicVolume,
-  mikmodGetPanSep,
+  mikmodGetMusicVolume,
   mikmodSetPanSep,
-  mikmodGetReverb,
+  mikmodGetPanSep,
   mikmodSetReverb,
-  mikmodGetSndFXVolume,
+  mikmodGetReverb,
   mikmodSetSndFXVolume,
-  mikmodGetVolume,
+  mikmodGetSndFXVolume,
   mikmodSetVolume,
-  mikmodGetDeviceIndex,
+  mikmodGetVolume,
   mikmodSetDeviceIndex,
+  mikmodGetDeviceIndex,
   MDriverInfo(..),
   mikmodGetDriver,
   mikmodGetMixFreq,
   mikmodSetMixFreq,
+  DriverModeFlag(..),
+  mikmodModifyDriverModeFlags,
   mikmodGetDriverModeFlags,
   mikmodSetDriverModeFlags,
 
@@ -87,6 +89,7 @@ module Sound.MikMod
   -- * Module Operations
   ModuleHandle,
   ModuleInfo(..),
+  ModuleFlag(..),
   getModuleInfo,
   getModuleRealChannels,
   getModuleTotalChannels,
@@ -141,8 +144,10 @@ module Sound.MikMod
   getSampleSpeed,
   setSampleVolume,
   getSampleVolume,
-  setSampleFlags,
+  SampleFlag(..),
+  modifySampleFlags,
   getSampleFlags,
+  setSampleFlags,
   getSampleInFlags,
   getSampleLength,
   setSampleLoopStart,
@@ -295,50 +300,46 @@ import Sound.MikMod.Sample
 --   sampleFree samp
 -- @
 
--- | Query the global music volume. It has range 0 to 128 (there are 129 possible
--- volume levels). The default music volume is 128.
-mikmodGetMusicVolume :: IO Int
-mikmodGetMusicVolume = fromIntegral <$> peek c_md_musicvolume
-
--- | Set the global music volume. The argument must be in the range 0 to 128.
+-- | Set the global music volume. The argument must be in the range 0 to 128
+-- (There are 129 volume levels).
 mikmodSetMusicVolume :: Int -> IO ()
 mikmodSetMusicVolume v = poke c_md_musicvolume (fromIntegral v)
 
--- | Query the global stereo separation. It has range 0 to 128 where 0 means
--- mono sound and 128 means full separation. The default pan sep is 128.
-mikmodGetPanSep :: IO Int
-mikmodGetPanSep = fromIntegral <$> peek c_md_pansep
+mikmodGetMusicVolume :: IO Int
+mikmodGetMusicVolume = fromIntegral <$> peek c_md_musicvolume
 
--- | Set the global stereo separation. The argument must be in the range 0 to 128.
+-- | Set the global stereo separation. The argument must be in the range 0 to
+-- 128 where 0 means mono sound and 128 means full separation. The default
+-- pan sep is 128.
 mikmodSetPanSep :: Int -> IO ()
 mikmodSetPanSep v = poke c_md_pansep (fromIntegral v)
 
--- | Query the global reverb. It has range 0 to 15 where 0 means no reverb
--- and 15 means extreme reverb. The default reverb is zero.
-mikmodGetReverb :: IO Int
-mikmodGetReverb = fromIntegral <$> peek c_md_reverb
+mikmodGetPanSep :: IO Int
+mikmodGetPanSep = fromIntegral <$> peek c_md_pansep
 
--- | Set the global reverb. The argument must be in the range 0 to 15.
+-- | Set the global reverb. The argument must be in the range 0 to 15 where 0
+-- means no reverb and 15 means extreme reverb. The default reverb is zero.
 mikmodSetReverb :: Int -> IO ()
 mikmodSetReverb v = poke c_md_reverb (fromIntegral v)
 
--- | Query the global sound effects volume. It has range 0 to 128.
--- The default sound effects volume is 128.
-mikmodGetSndFXVolume :: IO Int
-mikmodGetSndFXVolume = fromIntegral <$> peek c_md_sndfxvolume
+mikmodGetReverb :: IO Int
+mikmodGetReverb = fromIntegral <$> peek c_md_reverb
 
 -- | Set the global sound effects volume. The argument must be in the range 0 to 128.
 mikmodSetSndFXVolume :: Int -> IO ()
 mikmodSetSndFXVolume v = poke c_md_sndfxvolume (fromIntegral v)
 
--- | Query the global overall sound volume. It has range 0 to 128. The default
--- overall sound volume is 128.
-mikmodGetVolume :: IO Int
-mikmodGetVolume = fromIntegral <$> peek c_md_volume
+mikmodGetSndFXVolume :: IO Int
+mikmodGetSndFXVolume = fromIntegral <$> peek c_md_sndfxvolume
+
 
 -- | Set the global overall sound volume. The argument must be in the range 0 to 128.
 mikmodSetVolume :: Int -> IO ()
 mikmodSetVolume v = poke c_md_volume (fromIntegral v)
+
+mikmodGetVolume :: IO Int
+mikmodGetVolume = fromIntegral <$> peek c_md_volume
+
 
 -- | The selected output driver from the global 1-based list of drivers.
 mikmodGetDeviceIndex :: IO Int
@@ -359,26 +360,30 @@ mikmodGetDriver = do
     then return Nothing
     else Just <$> peekMDriver r
 
--- | Query the mix frequency setting measured in Hertz. Higher values mean
--- more sound quality and more CPU usage. The default is 44100.
-mikmodGetMixFreq :: IO Int
-mikmodGetMixFreq = fromIntegral <$> peek c_md_mixfreq
-
 -- | Set the mix frequency measured in Hertz. Higher values mean more sound
 -- quality and more CPU usage. Common values are 8000, 11025, 22100, and
 -- 44100. The default is 44100.
 mikmodSetMixFreq :: Int -> IO ()
 mikmodSetMixFreq freq = poke c_md_mixfreq (fromIntegral freq)
 
--- | Query the current "mode flags". See 'mikmodSetDriverModeFlags'.
-mikmodGetDriverModeFlags :: IO [DriverModeFlag]
-mikmodGetDriverModeFlags = unpackFlags <$> peek c_md_mode
+mikmodGetMixFreq :: IO Int
+mikmodGetMixFreq = fromIntegral <$> peek c_md_mixfreq
 
--- | Set the "mode flags". These flags affect sound output in various ways.
+-- | Modify the "mode flags". These flags affect sound output in various ways.
 -- For a full explanation of each one see the MikMod docs. Changing DModeInterp,
 -- DModeReverse, or DModeSurround will affect playing immediately. The other
 -- flags will require a reset. The default flags are set to [DModeStereo, DModeSurround,
 -- DMode16Bits, DModeSoftMusic, DModeSoftSndFX].
+mikmodModifyDriverModeFlags :: ([DriverModeFlag] -> [DriverModeFlag]) -> IO ()
+mikmodModifyDriverModeFlags f = do
+  flags <- mikmodGetDriverModeFlags
+  mikmodSetDriverModeFlags (f flags)
+
+mikmodGetDriverModeFlags :: IO [DriverModeFlag]
+mikmodGetDriverModeFlags = unpackFlags <$> peek c_md_mode
+
+-- | See 'mikmodModifyDriverModeFlags' to avoid clobbering flags you aren't
+-- trying to clear.
 mikmodSetDriverModeFlags :: [DriverModeFlag] -> IO ()
 mikmodSetDriverModeFlags flags = poke c_md_mode (packFlags flags)
 
@@ -391,6 +396,8 @@ mikmodSetDriverModeFlags flags = poke c_md_mode (packFlags flags)
 --
 -- Don't try this until you register a driver which is supported by your
 -- system. See 'mikmodRegisterAllDrivers'.
+--
+-- See also the convenience functions 'mikmodSetup' and 'runMikMod'.
 mikmodInit :: String -> IO ()
 mikmodInit params = do
   r <- mikmodInitSafe params
@@ -398,7 +405,7 @@ mikmodInit params = do
     Left e  -> throwIO (MikModException e)
     Right _ -> return ()
 
--- | Same as mikmodInit but doesn't throw exceptions.
+-- | Same as 'mikmodInit' but doesn't throw exceptions.
 mikmodInitSafe :: String -> IO (Either MikModError ())
 mikmodInitSafe params = withCString params $ \ptr -> do
   n <- c_MikMod_Init ptr
@@ -407,7 +414,7 @@ mikmodInitSafe params = withCString params $ \ptr -> do
     else Left <$> mikmodGetError
 
 -- | Registers all drivers and loaders, initializes MikMod, sets a number
--- of sound effect voices and enables output.
+-- of sample voices and enables output.
 mikmodSetup :: Int -> IO ()
 mikmodSetup sfxVoices = do
   mikmodRegisterAllDrivers
@@ -447,11 +454,11 @@ mikmodGetVersion = do
   enc <- fromIntegral <$> c_MikMod_GetVersion
   return (enc `shiftR` 16, 0xff .&. (enc `shiftR` 8), 0xff .&. enc)
 
--- | Get a formatted string describing the current driver, if any.
+-- | Get a formatted string describing the available drivers, if any.
 mikmodInfoDriver :: IO (Maybe String)
 mikmodInfoDriver = mikmodGetString c_MikMod_InfoDriver
 
--- | Get a formatted string describing the current loaders, if any.
+-- | Get a formatted string describing the available loaders, if any.
 mikmodInfoLoader :: IO (Maybe String)
 mikmodInfoLoader = mikmodGetString c_MikMod_InfoLoader
 
@@ -468,7 +475,7 @@ withMikMod = c_MikMod_Lock `bracket_` c_MikMod_Unlock
 mikmodRegisterAllDrivers :: IO ()
 mikmodRegisterAllDrivers = c_MikMod_RegisterAllDrivers
 
--- | Register all loaders. Use this before loading any modules or samples.
+-- | Register all loaders. Use this before loading any modules.
 mikmodRegisterAllLoaders :: IO ()
 mikmodRegisterAllLoaders = c_MikMod_RegisterAllLoaders
 
@@ -482,7 +489,7 @@ mikmodReset params = do
     Left e  -> throwIO (MikModException e)
     Right _ -> return ()
 
--- | Same as mikmodReset but doesn't throw exceptions.
+-- | Same as 'mikmodReset' but doesn't throw exceptions.
 mikmodResetSafe :: String -> IO (Either MikModError ())
 mikmodResetSafe params = withCString params $ \ptr -> do
   n <- c_MikMod_Reset ptr
@@ -491,15 +498,20 @@ mikmodResetSafe params = withCString params $ \ptr -> do
     else Left <$> mikmodGetError
 
 -- | Set the number of music voices and sample voices to be used for playback.
--- If this operation fails for some reason it will throw a MikModError.
-mikmodSetNumVoices :: Int -> Int -> IO ()
+-- A value of -1 for either argument means "don't modify pre-existing number
+-- of voices". In particular the number of music voices is handled by the
+-- module player so probably shouldn't be manipulated. If this operation fails
+-- for some reason it will throw a MikModError.
+mikmodSetNumVoices :: Int -- ^ Number of music voices or -1
+                   -> Int -- ^ Number of sample voices or -1
+                   -> IO ()
 mikmodSetNumVoices music sample = do
   r <- mikmodSetNumVoicesSafe music sample
   case r of
     Left e  -> throwIO (MikModException e)
     Right _ -> return ()
 
--- | Same as mikmodSetNumVoices but doesn't throw exceptions.
+-- | Same as 'mikmodSetNumVoices' but doesn't throw exceptions.
 mikmodSetNumVoicesSafe :: Int -> Int -> IO (Either MikModError ())
 mikmodSetNumVoicesSafe music sample = do
   n <- c_MikMod_SetNumVoices (fromIntegral music) (fromIntegral sample)
@@ -651,9 +663,8 @@ playerTogglePause = c_Player_TogglePause
 playerUnmuteChannel :: Int -> IO ()
 playerUnmuteChannel ch = c_Player_UnmuteChannel (fromIntegral ch)
 
--- | Toggle the muting of a range of channels. If MuteInclusive is used this will
--- include all channels in the given range. MuteExclusive is the opposite of
--- MuteInclusive.
+-- | Toggle the muting of a range of channels. MuteOperation determines if the
+-- range is inclusive or exclusive.
 playerUnmuteChannels :: MuteOperation -> Int -> Int -> IO ()
 playerUnmuteChannels op chanL chanU = c_Player_UnmuteChannels
   (marshalMuteOperation op)
@@ -661,7 +672,7 @@ playerUnmuteChannels op chanL chanU = c_Player_UnmuteChannels
   (fromIntegral chanU)
 
 -- | Load a sample from a mono, uncompressed RIFF WAV file. If something
--- goes wrong while loading the same it will throw a MikModError.
+-- goes wrong while loading the sample it will throw a MikModError.
 sampleLoad :: FilePath -> IO SampleHandle
 sampleLoad path = do
   r <- sampleLoadSafe path
@@ -669,7 +680,7 @@ sampleLoad path = do
     Left e     -> throwIO (MikModException e)
     Right samp -> return samp
 
--- | Same as sampleLoad but doesn't throw exceptions.
+-- | Same as 'sampleLoad' but doesn't throw exceptions.
 sampleLoadSafe :: FilePath -> IO (Either MikModError SampleHandle)
 sampleLoadSafe path = withCString path $ \cstr -> do
   ptr <- c_Sample_Load cstr
@@ -677,7 +688,7 @@ sampleLoadSafe path = withCString path $ \cstr -> do
     then Left <$> mikmodGetError
     else Right <$> pure ptr
 
--- | Same as sampleLoad but read sample data from a MReader.
+-- | Same as 'sampleLoad' but read sample data from a MReader.
 sampleLoadGeneric :: MReader -> IO SampleHandle
 sampleLoadGeneric mr = do
   r <- sampleLoadGenericSafe mr
@@ -685,7 +696,7 @@ sampleLoadGeneric mr = do
     Left e     -> throwIO (MikModException e)
     Right samp -> return samp
 
--- | Same as sampleLoadGeneric but doesn't throw exceptions.
+-- | Same as 'sampleLoadGeneric' but doesn't throw exceptions.
 sampleLoadGenericSafe :: MReader -> IO (Either MikModError SampleHandle)
 sampleLoadGenericSafe mr = withMReader mr $ \rptr -> do
   sptr <- c_Sample_LoadGeneric rptr

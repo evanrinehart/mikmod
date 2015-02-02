@@ -183,7 +183,7 @@ getModuleRepeatPosition :: ModuleHandle -> IO Int
 getModuleRepeatPosition mod = fromIntegral <$> ((#peek MODULE, reppos) mod :: IO UBYTE)
 
 -- | Set the loop flag. False means only process forward loops or same-pattern
--- backward loops. Default is True.
+-- backward loops. Default is True, process all loops.
 setModuleLoop :: ModuleHandle -> Bool -> IO ()
 setModuleLoop mod flag = (#poke MODULE, loop) mod (encodeBool flag :: BOOL)
 

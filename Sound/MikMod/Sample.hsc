@@ -65,8 +65,15 @@ setSampleVolume samp vol = (#poke SAMPLE, volume) samp (fromIntegral vol :: UBYT
 getSampleVolume :: SampleHandle -> IO Int
 getSampleVolume samp = fromIntegral <$> ((#peek SAMPLE, volume) samp :: IO UBYTE)
 
--- | Set the sample flags. Useful for setting the loop, reverse, and bi-directional
+-- | Modify the sample flags. Useful for setting the loop, reverse, and bi-directional
 -- playback characteristics of the sample.
+modifySampleFlags :: SampleHandle -> ([SampleFlag] -> [SampleFlag]) -> IO ()
+modifySampleFlags samp f = do
+  flags <- getSampleInFlags samp
+  setSampleFlags samp (f flags)
+
+-- | See 'modifySampleFlags' to avoid clobbering flags you aren't trying to
+-- clear, such as the sample format flags.
 setSampleFlags :: SampleHandle -> [SampleFlag] -> IO ()
 setSampleFlags samp flags = (#poke SAMPLE, flags) samp (packFlags flags)
 
@@ -74,12 +81,11 @@ getSampleFlags :: SampleHandle -> IO [SampleFlag]
 getSampleFlags samp = unpackFlags <$> (#peek SAMPLE, flags) samp
 
 -- | Query the "on disk" flags of the sample if you're curious about the
--- original format of the sample.
+-- original format.
 getSampleInFlags :: SampleHandle -> IO [SampleFlag]
 getSampleInFlags samp = unpackFlags <$> (#peek SAMPLE, inflags) samp
 
--- | Query the length of the sample... in samples. The byte-size of a (big) sample
--- is related to the size of a (small) sample in bytes, either 8bit or 16bit.
+-- | Query the length of the sample... in samples.
 getSampleLength :: SampleHandle -> IO Int
 getSampleLength samp = fromIntegral <$> ((#peek SAMPLE, length) samp :: IO ULONG)
 
