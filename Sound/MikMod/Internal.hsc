@@ -7,6 +7,7 @@ import Foreign.C.String
 import Data.Functor
 import Control.Applicative
 import System.IO.Unsafe
+import Control.Exception
 
 import Sound.MikMod.Synonyms
 import Sound.MikMod.Types
@@ -107,9 +108,6 @@ peekMDriver ptr = do
   return $ MDriverInfo name hard soft alias
 
 
-getModuleSamples :: ModuleHandle -> IO [SampleHandle]
-getModuleSamples fptr = undefined
-
 -- | Query the current MikMod global errno and get the MikModError expressed
 -- there, if any. This value is only valid if checked immediately after an
 -- error occurs. If you are interested in MikModErrors use the "Safe" versions
@@ -129,5 +127,13 @@ marshalCurious :: Num a => CuriousFlag -> a
 marshalCurious Curious = 1
 marshalCurious NotCurious = 0
 
-
+mikmodGetString :: IO CString -> IO (Maybe String)
+mikmodGetString query = do
+  ptr <- query
+  if (ptr == nullPtr)
+    then return Nothing
+    else
+      Just <$> peekCString ptr
+      `finally`
+      c_MikMod_free ptr
 

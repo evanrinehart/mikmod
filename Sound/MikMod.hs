@@ -32,6 +32,7 @@ module Sound.MikMod
   mikmodSetDriverModeFlags,
 
   -- * Core Operations
+  mikmodSetup,
   mikmodGetVersion,
   mikmodGetError,
   mikmodRegisterAllDrivers,
@@ -112,6 +113,7 @@ module Sound.MikMod
   getModuleFadeout,
   setModuleRelativeSpeed,
   getModuleRelativeSpeed,
+  getModuleSamples,
 
   -- * Sample Operations
   sampleLoad,
@@ -162,6 +164,9 @@ module Sound.MikMod
   Voice(..),
   MuteOperation(..),
   CuriousFlag(..),
+  Pan(..),
+  panLeft,
+  panRight,
   MDriverInfo,
   MikModError(..),
   MikModException(..),
@@ -239,11 +244,52 @@ import Sound.MikMod.Sample
 --   whileM_ playerActive $ do
 --     mikmodUpdate -- might be unnecessary on your system
 --     threadDelay 100000
+--   playerFree mod
 --   mikmodExit
 -- @
 --
 -- Make sure to link your program to MikMod with -lmikmod. GHCI can be used to
 -- experiment by using ghci -lmikmod.
+--
+-- Example of playing sound effects.
+--
+-- @
+-- import Control.Concurrent (threadDelay)
+-- import Control.Monad.Loops (whileM_)
+-- import Data.Functor ((\<$\>))
+-- import Sound.MikMod
+--
+-- main = do
+--   mikmodRegisterAllDrivers
+--   mikmodRegisterAllLoaders
+--   mikmodInit ""
+--   mikmodSetNumVoices (-1) 4
+--   mikmodEnableOutput
+--   samp <- sampleLoad "wilhelm.wav"
+--   Just voice <- samplePlay samp 0
+--   whileM_ (not \<$\> voiceStopped voice) $ do
+--     mikmodUpdate -- might be unnecessary on your system
+--     threadDelay 100000
+--   sampleFree samp
+--   mikmodExit
+-- @
+-- 
+-- Or using convenience wrappers for the initialization sequence,
+--
+-- @
+-- import Control.Concurrent (threadDelay)
+-- import Control.Monad.Loops (whileM_)
+-- import Data.Functor ((\<$\>))
+-- import Sound.MikMod
+--
+-- main = runMikMod 4 $ do
+--   samp <- sampleLoad "wilhelm.wav"
+--   Just voice <- samplePlay samp 0
+--   whileM_ (not \<$\> voiceStopped voice) $ do
+--     mikmodUpdate
+--     threadDelay 100000
+--   sampleFree samp
+-- @
 
 -- | Query the global music volume. It has range 0 to 128 (there are 129 possible
 -- volume levels). The default music volume is 128.
@@ -333,6 +379,8 @@ mikmodSetDriverModeFlags :: [DriverModeFlag] -> IO ()
 mikmodSetDriverModeFlags flags = poke c_md_mode (packFlags flags)
 
 
+
+
 -- | Initialize the MikMod system using an initialization string. An empty
 -- string is acceptable (see MikMod docs for more info). If initialization
 -- fails it will throw a MikModError.
@@ -353,6 +401,23 @@ mikmodInitSafe params = withCString params $ \ptr -> do
   if (n == 0)
     then return (Right ())
     else Left <$> mikmodGetError
+
+-- | Registers all drivers and loaders, initializes MikMod, sets a number
+-- of sound effect voices and enables output.
+mikmodSetup :: Int -> IO ()
+mikmodSetup sfxVoices = do
+  mikmodRegisterAllDrivers
+  mikmodRegisterAllLoaders
+  mikmodInit ""
+  mikmodSetNumVoices (-1) sfxVoices
+  mikmodEnableOutput
+  
+-- | Run an action between 'mikmodSetup' and 'mikmodExit'. It does not handle
+-- freeing of Modules and Samples.
+runMikMod :: Int -> IO a -> IO a
+runMikMod sfxVoices action = do
+  mikmodSetup sfxVoices
+  action `finally` mikmodExit
 
 -- | Shutdown the MikMod system.
 mikmodExit :: IO ()
@@ -653,7 +718,6 @@ sampleFree samp = c_Sample_Free samp
 voiceSetVolume :: Voice -> Int -> IO ()
 voiceSetVolume v vol = c_Voice_SetVolume (marshalVoice v) (fromIntegral vol)
 
--- | Query a voice's current volume level.
 voiceGetVolume :: Voice -> IO Int
 voiceGetVolume v = fromIntegral <$> c_Voice_GetVolume (marshalVoice v)
 
@@ -661,7 +725,6 @@ voiceGetVolume v = fromIntegral <$> c_Voice_GetVolume (marshalVoice v)
 voiceSetFrequency :: Voice -> Int -> IO ()
 voiceSetFrequency v freq = c_Voice_SetFrequency (marshalVoice v) (fromIntegral freq)
 
--- | Query a voice's current frequency in Hertz.
 voiceGetFrequency :: Voice -> IO Int
 voiceGetFrequency v = fromIntegral <$> c_Voice_GetFrequency (marshalVoice v)
 
@@ -669,13 +732,12 @@ voiceGetFrequency v = fromIntegral <$> c_Voice_GetFrequency (marshalVoice v)
 voiceSetPanning :: Voice -> Int -> IO ()
 voiceSetPanning v pan = c_Voice_SetPanning (marshalVoice v) (fromIntegral pan)
 
--- | Query a voice's current pan position. This will give 127 (center) when
--- no sample is playing on the given voice.
 voiceGetPanning :: Voice -> IO Int
 voiceGetPanning v = fromIntegral <$> c_Voice_GetPanning (marshalVoice v)
 
--- | Play a sample on the specified voice. The playing sample will have the
--- same "critical status" as the previous sample played on this voice.
+-- | Play a sample on the specified voice starting from the specified position.
+-- The playing sample will have the same "critical status" as the previous
+-- sample played on this voice.
 voicePlay :: Voice -> SampleHandle -> Int -> IO ()
 voicePlay v samp start = c_Voice_Play (marshalVoice v) samp (fromIntegral start)
 
@@ -698,14 +760,4 @@ voiceGetPosition v = fromIntegral <$> c_Voice_GetPosition (marshalVoice v)
 -- return zero.
 voiceRealVolume :: Voice -> IO Int
 voiceRealVolume v = fromIntegral <$> c_Voice_RealVolume (marshalVoice v)
-
-mikmodGetString :: IO CString -> IO (Maybe String)
-mikmodGetString query = do
-  ptr <- query
-  if (ptr == nullPtr)
-    then return Nothing
-    else
-      Just <$> peekCString ptr
-      `finally`
-      c_MikMod_free ptr
 

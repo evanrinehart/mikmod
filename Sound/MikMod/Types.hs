@@ -26,6 +26,9 @@ data MuteOperation = MuteInclusive | MuteExclusive
 data CuriousFlag = Curious | NotCurious
   deriving (Eq, Show)
 
+-- | Pan settings.
+data Pan = Pan Int | PanSurround deriving (Eq, Show)
+
 data MDriver
 
 data MDriverInfo = MDriverInfo
@@ -62,7 +65,7 @@ type SampleHandle = Ptr Sample
 
 -- | Static info about a sample.
 data SampleInfo = SampleInfo
-  { samplePanning :: Int
+  { samplePanning :: Pan
   , sampleSpeed :: Int
   , sampleVolume :: Int
   , sampleFlags :: [SampleFlag]

@@ -50,6 +50,15 @@ unpackInstrumentNames mod = do
 getInstrumentName :: Ptr Instrument -> IO String
 getInstrumentName ptr = peekCString =<< ((#peek INSTRUMENT, insname) ptr :: IO CString)
 
+-- | Get handles to the samples contained in a module. I don't think it would
+-- be wise to call sampleFree on these samples.
+getModuleSamples :: ModuleHandle -> IO [SampleHandle]
+getModuleSamples mod = do
+  nsamps <- moduleNumSamples <$> getModuleInfo mod
+  samps <- (#peek MODULE, samples) mod
+  let stride = (#size SAMPLE)
+  return (map (\i -> samps `plusPtr` (i*stride)) [0..nsamps-1])
+
 sizeOfInstrument :: Int
 sizeOfInstrument = (#size INSTRUMENT)
 
@@ -77,39 +86,62 @@ getModulePatternPosition mod = fromIntegral <$> ((#peek MODULE, patpos) mod :: I
 setModuleInitSpeed :: ModuleHandle -> Int -> IO ()
 setModuleInitSpeed mod s = (#poke MODULE, initspeed) mod (fromIntegral s :: UBYTE)
 
--- | Query the initial speed of the module.
 getModuleInitSpeed :: ModuleHandle -> IO Int
 getModuleInitSpeed mod = fromIntegral <$> ((#peek MODULE, initspeed) mod :: IO UBYTE)
 
--- |
+-- | Set the initial tempo of the module. Must be in range 32 - 255.
 setModuleInitTempo :: ModuleHandle -> Int -> IO ()
 setModuleInitTempo mod temp = (#poke MODULE, inittempo) mod (fromIntegral temp :: UBYTE)
 
--- |
 getModuleInitTempo :: ModuleHandle -> IO Int
 getModuleInitTempo mod = fromIntegral <$> ((#peek MODULE, inittempo) mod :: IO UBYTE)
 
--- |
-setModulePanning :: ModuleHandle -> Int -> Int -> IO ()
-setModulePanning mod ch pan = undefined
+-- | Set the pan position of a channel in a module.
+setModulePanning :: ModuleHandle
+                 -> Int -- ^ Channel to set panning on.
+                 -> Int -- ^ Pan position from 0 (far left) to 255 (far right).
+                 -> IO ()
+setModulePanning mod ch pan = do
+  nchans <- moduleNumChannels <$> getModuleInfo mod
+  chans <- (#peek MODULE, panning) mod :: IO (Ptr UWORD)
+  if (ch >= 0 && ch < nchans)
+    then pokeElemOff chans ch (fromIntegral pan)
+    else return ()
 
--- |
+-- | Query the pan position of a particular channel.
 getModulePanning :: ModuleHandle -> Int -> IO Int
-getModulePanning mod ch = undefined
+getModulePanning mod ch = do
+  nchans <- moduleNumChannels <$> getModuleInfo mod
+  chans <- (#peek MODULE, panning) mod :: IO (Ptr UWORD)
+  if (ch >= 0 && ch < nchans)
+    then fromIntegral <$> peekElemOff chans ch
+    else return 0
 
--- |
-setModuleChannelVolume :: ModuleHandle -> Int -> Int -> IO ()
-setModuleChannelVolume mod ch vol = undefined
+-- | Set the volume of a channel in a module.
+setModuleChannelVolume :: ModuleHandle
+                       -> Int -- ^ Channel to set volume on.
+                       -> Int -- ^ Volume level from 0 to 128.
+                       -> IO ()
+setModuleChannelVolume mod ch vol = do
+  nchans <- moduleNumChannels <$> getModuleInfo mod
+  chans <- (#peek MODULE, chanvol) mod :: IO (Ptr UBYTE)
+  if (ch >= 0 && ch < nchans)
+    then pokeElemOff chans ch (fromIntegral vol)
+    else return ()
 
--- |
+-- | Query the volume of a particular channel.
 getModuleChannelVolume :: ModuleHandle -> Int -> IO Int
-getModuleChannelVolume mod ch = undefined
+getModuleChannelVolume mod ch = do
+  nchans <- moduleNumChannels <$> getModuleInfo mod
+  chans <- (#peek MODULE, chanvol) mod :: IO (Ptr UBYTE)
+  if (ch >= 0 && ch < nchans)
+    then fromIntegral <$> peekElemOff chans ch
+    else return 0
 
 -- | Set the tempo of the module. See 'playerSetTempo'.
 setModuleBPM :: ModuleHandle -> Int -> IO ()
 setModuleBPM mod bpm = (#poke MODULE, bpm) mod (fromIntegral bpm :: UWORD)
 
--- | Query the current module tempo.
 getModuleBPM :: ModuleHandle -> IO Int
 getModuleBPM mod = fromIntegral <$> ((#peek MODULE, bpm) mod :: IO UWORD)
 
@@ -117,7 +149,6 @@ getModuleBPM mod = fromIntegral <$> ((#peek MODULE, bpm) mod :: IO UWORD)
 setModuleSongSpeed :: ModuleHandle -> Int -> IO ()
 setModuleSongSpeed mod spd = (#poke MODULE, sngspd) mod (fromIntegral spd :: UBYTE)
 
--- | Query the current song speed.
 getModuleSongSpeed :: ModuleHandle -> IO Int
 getModuleSongSpeed mod = fromIntegral <$> ((#peek MODULE, sngspd) mod :: IO UBYTE)
 
@@ -126,7 +157,6 @@ getModuleSongSpeed mod = fromIntegral <$> ((#peek MODULE, sngspd) mod :: IO UBYT
 setModuleExtSpeed :: ModuleHandle -> Bool -> IO ()
 setModuleExtSpeed mod flag = (#poke MODULE, extspd) mod (encodeBool flag)
 
--- | Query the Protracker extended speed effect flag.
 getModuleExtSpeed :: ModuleHandle -> IO Bool
 getModuleExtSpeed mod = decodeBool <$> (#peek MODULE, extspd) mod
 
@@ -134,7 +164,6 @@ getModuleExtSpeed mod = decodeBool <$> (#peek MODULE, extspd) mod
 setModulePanFlag :: ModuleHandle -> Bool -> IO ()
 setModulePanFlag mod flag = (#poke MODULE, panflag) mod (encodeBool flag)
 
--- | Query the pan flag.
 getModulePanFlag :: ModuleHandle -> IO Bool
 getModulePanFlag mod = decodeBool <$> (#peek MODULE, panflag) mod
 
@@ -143,7 +172,6 @@ getModulePanFlag mod = decodeBool <$> (#peek MODULE, panflag) mod
 setModuleWrap :: ModuleHandle -> Bool -> IO ()
 setModuleWrap mod flag = (#poke MODULE, wrap) mod (encodeBool flag)
 
--- | Query the wrap flag.
 getModuleWrap :: ModuleHandle -> IO Bool
 getModuleWrap mod = decodeBool <$> (#peek MODULE, wrap) mod
 
@@ -151,7 +179,6 @@ getModuleWrap mod = decodeBool <$> (#peek MODULE, wrap) mod
 setModuleRepeatPosition :: ModuleHandle -> Int -> IO ()
 setModuleRepeatPosition mod pos = (#poke MODULE, reppos) mod (fromIntegral pos :: UBYTE)
 
--- | Query the restart position.
 getModuleRepeatPosition :: ModuleHandle -> IO Int
 getModuleRepeatPosition mod = fromIntegral <$> ((#peek MODULE, reppos) mod :: IO UBYTE)
 
@@ -160,7 +187,6 @@ getModuleRepeatPosition mod = fromIntegral <$> ((#peek MODULE, reppos) mod :: IO
 setModuleLoop :: ModuleHandle -> Bool -> IO ()
 setModuleLoop mod flag = (#poke MODULE, loop) mod (encodeBool flag :: BOOL)
 
--- | Query the loop flag.
 getModuleLoop :: ModuleHandle -> IO Bool
 getModuleLoop mod = decodeBool <$> (#peek MODULE, loop) mod
 
@@ -168,7 +194,6 @@ getModuleLoop mod = decodeBool <$> (#peek MODULE, loop) mod
 setModuleFadeout :: ModuleHandle -> Bool -> IO ()
 setModuleFadeout mod flag = (#poke MODULE, fadeout) mod (encodeBool flag)
 
--- | Query the fadeout flag of the module.
 getModuleFadeout :: ModuleHandle -> IO Bool
 getModuleFadeout mod = decodeBool <$> ((#peek MODULE, fadeout) mod :: IO BOOL)
 
@@ -177,6 +202,6 @@ getModuleFadeout mod = decodeBool <$> ((#peek MODULE, fadeout) mod :: IO BOOL)
 setModuleRelativeSpeed :: ModuleHandle -> Int -> IO ()
 setModuleRelativeSpeed mod s = (#poke MODULE, relspd) mod (fromIntegral s :: SWORD)
 
--- | Get the relative playback speed.
 getModuleRelativeSpeed :: ModuleHandle -> IO Int
 getModuleRelativeSpeed mod = fromIntegral <$> ((#peek MODULE, relspd) mod :: IO SWORD)
+
