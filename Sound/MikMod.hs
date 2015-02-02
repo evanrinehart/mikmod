@@ -184,6 +184,8 @@ import Sound.MikMod.Errors
 import Sound.MikMod.Flags
 import Sound.MikMod.Internal
 import Sound.MikMod.MReader
+import Sound.MikMod.Module
+import Sound.MikMod.Sample
 
 -- $overview
 --
@@ -453,7 +455,7 @@ playerActive = decodeBool <$> c_Player_Active
 -- are no more handles to it. This is convenient, but you must keep a module's
 -- handle around if you don't want it to stop playing.
 playerFree :: ModuleHandle -> IO ()
-playerFree mod = finalizeForeignPtr mod
+playerFree mod = c_Player_Free mod
 
 -- | This function determines the voice corresponding to the specified module channel.
 playerGetChannelVoice :: Int -> IO (Maybe Voice)
@@ -468,8 +470,8 @@ playerGetModule :: IO (Maybe ModuleHandle)
 playerGetModule = do
   ptr <- c_Player_GetModule
   if (ptr == nullPtr)
-    then return Nothing
-    else Just <$> newForeignPtr c_Player_Free_Ptr ptr
+    then pure Nothing
+    else pure (Just ptr)
 
 -- | Load a module from a file. The second argument is the maximum number of channels
 -- to allow. If something goes wrong while loading the module it will throw a MikModError.
@@ -486,7 +488,7 @@ playerLoadSafe path maxChans curious = withCString path $ \cstr -> do
   ptr <- c_Player_Load cstr (fromIntegral maxChans) (marshalCurious curious)
   if (ptr == nullPtr)
     then Left <$> mikmodGetError
-    else Right <$> newForeignPtr c_Player_Free_Ptr ptr
+    else Right <$> pure ptr
 
 -- | Same as playerLoad but loads the module data from the MReader.
 playerLoadGeneric :: MReader -> Int -> CuriousFlag -> IO ModuleHandle
@@ -502,7 +504,7 @@ playerLoadGenericSafe rd maxChans curious = withMReader rd $ \rptr -> do
   mptr <- c_Player_LoadGeneric rptr (fromIntegral maxChans) (marshalCurious curious)
   if (mptr == nullPtr)
     then Left <$> mikmodGetError
-    else Right <$> newForeignPtr c_Player_Free_Ptr mptr
+    else Right <$> pure mptr
 
 -- | Load only the title from a module file. Returns Nothing in case there
 -- is no title or an error occurred!
@@ -555,7 +557,7 @@ playerSetVolume volume = c_Player_SetVolume (fromIntegral volume)
 
 -- | Begin playing the given module.
 playerStart :: ModuleHandle -> IO ()
-playerStart mod = withForeignPtr mod (\ptr -> c_Player_Start ptr)
+playerStart mod = c_Player_Start mod
 
 -- | Stop the player.
 playerStop :: IO ()
@@ -605,7 +607,7 @@ sampleLoadSafe path = withCString path $ \cstr -> do
   ptr <- c_Sample_Load cstr
   if (ptr == nullPtr)
     then Left <$> mikmodGetError
-    else Right <$> newForeignPtr c_Sample_Free_Ptr ptr
+    else Right <$> pure ptr
 
 -- | Same as sampleLoad but read sample data from a MReader.
 sampleLoadGeneric :: MReader -> IO SampleHandle
@@ -621,28 +623,26 @@ sampleLoadGenericSafe mr = withMReader mr $ \rptr -> do
   sptr <- c_Sample_LoadGeneric rptr
   if (sptr == nullPtr)
     then Left <$> mikmodGetError
-    else Right <$> newForeignPtr c_Sample_Free_Ptr sptr
+    else Right <$> pure sptr
 
 
 -- | Play the given sample from the specified starting position (in samples).
 -- If there aren't enough voices available to do this, it will replace the
 -- oldest non-critical sample currently playing.
 samplePlay :: SampleHandle -> Int -> IO Voice
-samplePlay samp start = withForeignPtr samp $ \ptr -> do
-  Voice <$> c_Sample_Play ptr (fromIntegral start) 0
+samplePlay samp start = Voice <$> c_Sample_Play samp (fromIntegral start) 0
 
 -- | This is like 'samplePlay' but the sample will not be interrupted by other
 -- samples played later (unless all voices are being used by critical samples
 -- and yet another critical sample is played).
 samplePlayCritical :: SampleHandle -> Int -> IO Voice
-samplePlayCritical samp start = withForeignPtr samp $ \ptr -> do
-  Voice <$> c_Sample_Play ptr (fromIntegral start) sfxCritical
+samplePlayCritical samp start = Voice <$> c_Sample_Play samp (fromIntegral start) sfxCritical
 
 -- | Free a sample. You must discard the SampleHandle after this operation.
 -- Note that samples will be freed automatically when there are no more
 -- handles to it.
 sampleFree :: SampleHandle -> IO ()
-sampleFree samp = finalizeForeignPtr samp
+sampleFree samp = c_Sample_Free samp
 
 -- | Set a voice's volume, 0 - 256. There are 257 volume levels.
 voiceSetVolume :: Voice -> Int -> IO ()
@@ -672,8 +672,7 @@ voiceGetPanning v = fromIntegral <$> c_Voice_GetPanning (marshalVoice v)
 -- | Play a sample on the specified voice. The playing sample will have the
 -- same "critical status" as the previous sample played on this voice.
 voicePlay :: Voice -> SampleHandle -> Int -> IO ()
-voicePlay v samp start = withForeignPtr samp $ \ptr -> do
-  c_Voice_Play (marshalVoice v) ptr (fromIntegral start)
+voicePlay v samp start = c_Voice_Play (marshalVoice v) samp (fromIntegral start)
 
 -- | Stop a voice from playing.
 voiceStop :: Voice -> IO ()

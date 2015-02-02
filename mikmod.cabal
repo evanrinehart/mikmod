@@ -21,7 +21,7 @@ library
   -- Modules exported by the library.
   exposed-modules:     Sound.MikMod, Sound.MikMod.Errors, Sound.MikMod.Types, Sound.MikMod.Flags, Sound.MikMod.Synonyms
   -- Modules included in this library but not exported.
-  other-modules:       Sound.MikMod.Internal Sound.MikMod.MReader
+  other-modules:       Sound.MikMod.Internal Sound.MikMod.MReader Sound.MikMod.Module Sound.MikMod.Sample
   
   -- LANGUAGE extensions used by modules in this package.
   other-extensions:    ForeignFunctionInterface, EmptyDataDecls

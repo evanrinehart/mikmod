@@ -15,6 +15,9 @@ decodeBool 0 = False
 decodeBool 1 = True
 decodeBool x = error ("decodeBool " ++ show x)
 
-encodeBool :: Num a => Bool -> a
+encodeBool :: Bool -> BOOL
 encodeBool False = 0
 encodeBool True  = 1
+
+genericEncodeBool :: Num a => Bool -> a
+genericEncodeBool x = if x then 1 else 0

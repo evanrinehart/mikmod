@@ -1,7 +1,6 @@
 module Sound.MikMod.Types where
 
 import Foreign.Ptr
-import Foreign.ForeignPtr
 import Foreign.C.Types
 import System.IO
 import Data.Word (Word8)
@@ -40,7 +39,7 @@ data Module
 
 -- | Handle to a Module object which contains the music data and current
 -- playback state of a song.
-type ModuleHandle = ForeignPtr Module
+type ModuleHandle = Ptr Module
 
 -- | Static info about a module.
 data ModuleInfo = ModuleInfo
@@ -59,7 +58,7 @@ data ModuleInfo = ModuleInfo
 
 data Sample
 
-type SampleHandle = ForeignPtr Sample
+type SampleHandle = Ptr Sample
 
 -- | Static info about a sample.
 data SampleInfo = SampleInfo
