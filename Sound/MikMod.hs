@@ -52,6 +52,7 @@ module Sound.MikMod
   mikmodResetSafe,
   mikmodDisableOutput,
   mikmodEnableOutput,
+  mikmodUpdate,
   mikmodExit,
 
   -- * Module Player Operations
@@ -179,7 +180,6 @@ module Sound.MikMod
   isNotAnError,
 
   -- * Esoterica
-  mikmodUpdate,
   mikmodInitThreads,
   withMikMod
 
@@ -537,7 +537,7 @@ mikmodSetNumVoicesSafe music sample = do
     then return (Right ())
     else Left <$> mikmodGetError
 
--- Update the sound. If you don't call this often enough, then sound might drop
+-- | Update the sound. If you don't call this often enough, then sound might drop
 -- out. If you call this too often, the audio driver may eat CPU in a busy loop.
 -- Higher quality audio requires calling mikmodUpdate more often (see
 -- 'mikmodSetMixFreq'). And finally, on some drivers this is a no-op because
