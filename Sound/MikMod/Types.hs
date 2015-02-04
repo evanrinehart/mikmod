@@ -19,7 +19,7 @@ newtype Voice = Voice { marshalVoice :: SBYTE }
 data MuteOperation = MuteInclusive | MuteExclusive
   deriving (Eq, Show)
 
--- | When loading a module Curious will cause the loader to attempt to load
+-- | When loading a module, Curious will cause the loader to attempt to load
 -- hidden tracks past the end of the song.
 data CuriousFlag = Curious | NotCurious
   deriving (Eq, Show)

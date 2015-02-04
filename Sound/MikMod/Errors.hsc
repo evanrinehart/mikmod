@@ -3,6 +3,7 @@
 module Sound.MikMod.Errors (
   MikModError(..),
   getErrno,
+  isNotAnError,
   describeMikModError,
   MikModException(..),
   MikModErrno(..),
@@ -32,8 +33,12 @@ getErrno :: MikModError -> MikModErrno
 getErrno (Critical e)    = e
 getErrno (NonCritical e) = e
 
+isNotAnError :: MikModError -> Bool
+isNotAnError e = getErrno e == MMErrNoError
+
 -- | The possible things to be found in MikMod_errno
 data MikModErrno =
+  MMErrNoError |
   MMErrOpeningFile |
   MMErrOutOfMemory |
   MMErrDynamicLinking |
@@ -152,6 +157,7 @@ describeMikModError e = unsafePerformIO $ do
 
 marshalMikModErrno :: MikModErrno -> CInt
 marshalMikModErrno e = case e of
+  MMErrNoError -> 0
   MMErrOpeningFile -> (#const MMERR_OPENING_FILE)
   MMErrOutOfMemory -> (#const MMERR_OUT_OF_MEMORY)
   MMErrDynamicLinking -> (#const MMERR_DYNAMIC_LINKING)
@@ -252,6 +258,7 @@ marshalMikModErrno e = case e of
 
 unmarshalMikModErrno :: CInt -> MikModErrno
 unmarshalMikModErrno code = case code of
+  0 -> MMErrNoError
   (#const MMERR_OPENING_FILE) -> MMErrOpeningFile
   (#const MMERR_OUT_OF_MEMORY) -> MMErrOutOfMemory
   (#const MMERR_DYNAMIC_LINKING) -> MMErrDynamicLinking

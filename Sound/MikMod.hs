@@ -52,10 +52,7 @@ module Sound.MikMod
   mikmodResetSafe,
   mikmodDisableOutput,
   mikmodEnableOutput,
-  mikmodUpdate,
   mikmodExit,
-  mikmodInitThreads,
-  withMikMod,
 
   -- * Module Player Operations
   CuriousFlag(..),
@@ -177,8 +174,14 @@ module Sound.MikMod
 
   -- * Errors
   MikModError(..),
-  describeMikModError,
   MikModException(..),
+  describeMikModError,
+  isNotAnError,
+
+  -- * Esoterica
+  mikmodUpdate,
+  mikmodInitThreads,
+  withMikMod
 
 )
 where
@@ -351,7 +354,7 @@ mikmodGetDeviceIndex = fromIntegral <$> peek c_md_device
 mikmodSetDeviceIndex :: Int -> IO ()
 mikmodSetDeviceIndex i = poke c_md_device (fromIntegral i)
 
--- | Get a info report of the sound driver currently in use, if any. MikMod
+-- | Get an info report of the sound driver currently in use, if any. MikMod
 -- does not expose any functionality via MDriver field manipulation.
 mikmodGetDriver :: IO (Maybe MDriverInfo)
 mikmodGetDriver = do
@@ -424,7 +427,7 @@ mikmodSetup sfxVoices = do
   mikmodEnableOutput
   
 -- | Run an action between 'mikmodSetup' and 'mikmodExit'. It does not handle
--- freeing of Modules and Samples.
+-- freeing of Modules or Samples.
 runMikMod :: Int -> IO a -> IO a
 runMikMod sfxVoices action = do
   mikmodSetup sfxVoices
@@ -434,13 +437,14 @@ runMikMod sfxVoices action = do
 mikmodExit :: IO ()
 mikmodExit = c_MikMod_Exit
 
--- | Check if a module is currently playing.
+-- | Returns True if and only if sound output is enabled.
 mikmodActive :: IO Bool
 mikmodActive = decodeBool <$> c_MikMod_Active
 
--- | Enable output. This happens automatically when playing a module. But
--- according to the examples, mikmodEnableOutput is required before sound
--- effects will work by themselves.
+-- | Enable output. Playing modules will enable output automatically.
+-- However playing samples does not. Therefore use 'mikmodEnableOutput' if
+-- you intend to play sound effects with no music. The convenience function
+-- 'mikmodSetup' enables output among other things.
 mikmodEnableOutput :: IO ()
 mikmodEnableOutput = c_MikMod_EnableOutput
 
@@ -462,12 +466,25 @@ mikmodInfoDriver = mikmodGetString c_MikMod_InfoDriver
 mikmodInfoLoader :: IO (Maybe String)
 mikmodInfoLoader = mikmodGetString c_MikMod_InfoLoader
 
--- | Check if MikMod is thread safe.
+-- | If your libmikmod has pthread support, returns True. Otherwise this
+-- may initialize internal mutexes to support multi-threaded access anyway.
+-- A result of True indicates this was successful. False indicates no support
+-- for multi-threaded access is available. It is safe to call this multiple
+-- times. Only the first call has any effect.
+--
+-- Short story: Before attempting to use MikMod from multiple threads execute
+-- this and check that the result is True.
+--
+-- This only has an effect on Win32, OS/2, and EMX.
 mikmodInitThreads :: IO Bool
 mikmodInitThreads = decodeBool <$> c_MikMod_InitThreads
 
 -- | Execute the action after calling MikMod_Lock. Calls MikMod_Unlock afterwards
--- even if an error occurred. See the MikMod docs to determine if this is necessary.
+-- even if an error occurred. If 'mikmodInitThreads' returns True then it means
+-- all calls to libmikmod will be protected by internal mutexes. Therefore using
+-- MikMod functions inside a 'withMikMod' will deadlock. Allowing clients to
+-- manually lock MikMod is probably only useful when manipulating shared data
+-- across the API boundary.
 withMikMod :: IO a -> IO a
 withMikMod = c_MikMod_Lock `bracket_` c_MikMod_Unlock
 
@@ -479,9 +496,9 @@ mikmodRegisterAllDrivers = c_MikMod_RegisterAllDrivers
 mikmodRegisterAllLoaders :: IO ()
 mikmodRegisterAllLoaders = c_MikMod_RegisterAllLoaders
 
--- | Reinitialize the MikMod system. This might be necessary after tweaking
--- one of MikMods global parameters. If reinitialization fails it will throw
--- a MikModError.
+-- | Reset the driver using the new global variable settings.
+-- If the driver has not been initialized, it will be now. Throw a
+-- MikModError in case of failure.
 mikmodReset :: String -> IO ()
 mikmodReset params = do
   r <- mikmodResetSafe params
@@ -498,10 +515,11 @@ mikmodResetSafe params = withCString params $ \ptr -> do
     else Left <$> mikmodGetError
 
 -- | Set the number of music voices and sample voices to be used for playback.
--- A value of -1 for either argument means "don't modify pre-existing number
--- of voices". In particular the number of music voices is handled by the
--- module player so probably shouldn't be manipulated. If this operation fails
--- for some reason it will throw a MikModError.
+-- If either parameter is -1, the currently set value will be retained.
+--
+-- In particular the number of music voices is handled by the module player
+-- so probably shouldn't be manipulated. If this operation fails it will throw
+-- a MikModError.
 mikmodSetNumVoices :: Int -- ^ Number of music voices or -1
                    -> Int -- ^ Number of sample voices or -1
                    -> IO ()
@@ -519,25 +537,30 @@ mikmodSetNumVoicesSafe music sample = do
     then return (Right ())
     else Left <$> mikmodGetError
 
--- | On some drivers mikmodUpdate must called periodically to fill an audio
--- out buffer, or sound wont play. In those environments you must call it
--- more often for higher quality audio (see 'mikmodSetMixFreq').
+-- Update the sound. If you don't call this often enough, then sound might drop
+-- out. If you call this too often, the audio driver may eat CPU in a busy loop.
+-- Higher quality audio requires calling mikmodUpdate more often (see
+-- 'mikmodSetMixFreq'). And finally, on some drivers this is a no-op because
+-- there is a fill thread.
 --
--- Many audio backends have luckily taken this out of the programmer's hands and
--- so mikmodUpdate may be unnecessary.
+-- Known:
+--
+-- - On OSX there is a fill thread and polling mikmodUpdate is unnecessary.
+--
+-- - On Linux ALSA there is /no/ fill thread and polling mikmodUpdate is necessary.
 mikmodUpdate :: IO ()
 mikmodUpdate = c_MikMod_Update
 
--- | Check if the player is active.
+-- | Returns True if and only if a song is playing.
 playerActive :: IO Bool
 playerActive = decodeBool <$> c_Player_Active
 
--- | Free a module and stop it if it is playing. You must discard the ModuleHandle
--- after this operation. 
+-- | Free a module and all its contents. If the module was playing then it
+-- will be stopped. Discard the ModuleHandle after using this operation.
 playerFree :: ModuleHandle -> IO ()
 playerFree = c_Player_Free
 
--- | This function determines the voice corresponding to the specified module channel.
+-- | Returns the voice corresponding to a module channel.
 playerGetChannelVoice :: Int -> IO (Maybe Voice)
 playerGetChannelVoice ch = do
   v <- c_Player_GetChannelVoice (fromIntegral ch)
@@ -553,8 +576,9 @@ playerGetModule = do
     then pure Nothing
     else pure (Just ptr)
 
--- | Load a module from a file. The second argument is the maximum number of channels
--- to allow. If something goes wrong while loading the module it will throw a MikModError.
+-- | Load a module from a file. The second argument is the maximum number of
+-- channels to allow. If something goes wrong while loading the module it will
+-- throw a MikModError.
 playerLoad :: FilePath -> Int -> CuriousFlag -> IO ModuleHandle
 playerLoad path maxChans curious = do
   r <- playerLoadSafe path maxChans curious
@@ -562,7 +586,7 @@ playerLoad path maxChans curious = do
     Left e    -> throwIO (MikModException e)
     Right mod -> return mod
 
--- | Same as playerLoad but doesn't throw exceptions.
+-- | Same as 'playerLoad' but doesn't throw exceptions.
 playerLoadSafe :: FilePath -> Int -> CuriousFlag -> IO (Either MikModError ModuleHandle)
 playerLoadSafe path maxChans curious = withCString path $ \cstr -> do
   ptr <- c_Player_Load cstr (fromIntegral maxChans) (marshalCurious curious)
@@ -570,7 +594,7 @@ playerLoadSafe path maxChans curious = withCString path $ \cstr -> do
     then Left <$> mikmodGetError
     else Right <$> pure ptr
 
--- | Same as playerLoad but loads the module data from the MReader.
+-- | Same as 'playerLoad' but loads the module data from an MReader.
 playerLoadGeneric :: MReader -> Int -> CuriousFlag -> IO ModuleHandle
 playerLoadGeneric rd maxChans curious = do
   r <- playerLoadGenericSafe rd maxChans curious
@@ -578,7 +602,7 @@ playerLoadGeneric rd maxChans curious = do
     Left e    -> throwIO (MikModException e)
     Right mod -> return mod
 
--- | Same as playerLoadGeneric but doesn't throw exceptions.
+-- | Same as 'playerLoadGeneric' but doesn't throw exceptions.
 playerLoadGenericSafe :: MReader -> Int -> CuriousFlag -> IO (Either MikModError ModuleHandle)
 playerLoadGenericSafe rd maxChans curious = withMReader rd $ \rptr -> do
   mptr <- c_Player_LoadGeneric rptr (fromIntegral maxChans) (marshalCurious curious)
@@ -586,12 +610,30 @@ playerLoadGenericSafe rd maxChans curious = withMReader rd $ \rptr -> do
     then Left <$> mikmodGetError
     else Right <$> pure mptr
 
--- | Load only the title from a module file. Returns Nothing in case there
--- is no title or an error occurred!
+-- | Load only the title from a module file. Returns Nothing if there is
+-- no title. If something goes wrong it will throw a MikModError.
 playerLoadTitle :: FilePath -> IO (Maybe String)
-playerLoadTitle path = mikmodGetString (withCString path c_Player_LoadTitle)
+playerLoadTitle path = do
+  result <- playerLoadTitleSafe path
+  case result of
+    Left e -> throwIO (MikModException e)
+    Right mtitle -> return mtitle
 
--- | Mute the given channel.
+
+-- | Same as 'playerLoadTitle' but doesn't throw exceptions.
+playerLoadTitleSafe :: FilePath -> IO (Either MikModError (Maybe String))
+playerLoadTitleSafe path = do
+  result <- withCString path c_Player_LoadTitle
+  if result == nullPtr
+    then do
+      mme <- mikmodGetError
+      if isNotAnError mme
+        then return (Right Nothing)
+        else return (Left mme)
+    else Right . Just <$> peekCString result
+
+
+-- | Mute a channel.
 playerMuteChannel :: Int -> IO ()
 playerMuteChannel ch = c_Player_MuteChannel (fromIntegral ch)
 
@@ -603,19 +645,19 @@ playerMuteChannels op chanL chanU = c_Player_MuteChannels
   (fromIntegral chanL)
   (fromIntegral chanU)
 
--- | Check if a channel is muted.
+-- | Return True if and only if a channel is muted.
 playerMuted :: Int -> IO Bool
 playerMuted ch = decodeBool <$> c_Player_Muted (fromIntegral ch)
 
--- | Skip to the next position in the module.
+-- | Skip to the next position in the current module.
 playerNextPosition :: IO ()
 playerNextPosition = c_Player_NextPosition
 
--- | Go back to the previous position in the module.
+-- | Go back to the previous position in the current module.
 playerPrevPosition :: IO ()
 playerPrevPosition = c_Player_PrevPosition
 
--- | Check if the current module is paused.
+-- | Returns True if and only if the player is paused.
 playerPaused :: IO Bool
 playerPaused = decodeBool <$> c_Player_Paused
 
@@ -623,19 +665,20 @@ playerPaused = decodeBool <$> c_Player_Paused
 playerSetPosition :: Int -> IO ()
 playerSetPosition pos = c_Player_SetPosition (fromIntegral pos)
 
--- | Set the speed of the current module, 1 to 32.
+-- | Set the speed of the current module to a value in the range 1 to 32.
 playerSetSpeed :: Int -> IO ()
 playerSetSpeed speed = c_Player_SetSpeed (fromIntegral speed)
 
--- | Set the tempo of the current module, 32 to 255.
+-- | Set the tempo of the current module to a value in the range 32 to 255.
 playerSetTempo :: Int -> IO ()
 playerSetTempo tempo = c_Player_SetTempo (fromIntegral tempo)
 
--- | Set the volume of the current module, 0 to 128.
+-- | Set the volume of the current module to a value in the range 0 to 128.
 playerSetVolume :: Int -> IO ()
 playerSetVolume volume = c_Player_SetVolume (fromIntegral volume)
 
--- | Begin playing the given module.
+-- | Begin playing a module. If another module is already playing it will
+-- be stopped.
 playerStart :: ModuleHandle -> IO ()
 playerStart = c_Player_Start
 
@@ -647,8 +690,8 @@ playerStop = c_Player_Stop
 playerToggleMuteChannel :: Int -> IO ()
 playerToggleMuteChannel ch = c_Player_ToggleMuteChannel (fromIntegral ch)
 
--- | Toggle the muting of a range of channels. MuteOperation determines if the range is
--- inclusive or exclusive.
+-- | Toggle the muting of a range of channels. MuteOperation determines if
+-- the range is inclusive or exclusive.
 playerToggleMuteChannels :: MuteOperation -> Int -> Int -> IO ()
 playerToggleMuteChannels op chanL chanU = c_Player_ToggleMuteChannels
   (marshalMuteOperation op)
@@ -688,7 +731,7 @@ sampleLoadSafe path = withCString path $ \cstr -> do
     then Left <$> mikmodGetError
     else Right <$> pure ptr
 
--- | Same as 'sampleLoad' but read sample data from a MReader.
+-- | Same as 'sampleLoad' but read sample data from an MReader.
 sampleLoadGeneric :: MReader -> IO SampleHandle
 sampleLoadGeneric mr = do
   r <- sampleLoadGenericSafe mr
@@ -705,9 +748,13 @@ sampleLoadGenericSafe mr = withMReader mr $ \rptr -> do
     else Right <$> pure sptr
 
 
--- | Play the given sample from the specified starting position (in samples).
--- If there aren't enough voices available to do this, it will replace the
--- oldest non-critical sample currently playing.
+-- | Plays a sound effects sample. Picks a voice from the number of voices
+-- allocated for use as sound effects. Returns the voice that the sound is
+-- being played on. The oldest playing sample will be interrupted if necessary,
+-- unless all playing samples are "critical", in which case the sound will not
+-- play.
+--
+-- The second argument is the position, in samples, to start playing from.
 samplePlay :: SampleHandle -> Int -> IO (Maybe Voice)
 samplePlay samp start = do
   v <- c_Sample_Play samp (fromIntegral start) 0
@@ -715,9 +762,9 @@ samplePlay samp start = do
     then (return . Just . Voice) v
     else return Nothing
 
--- | This is like 'samplePlay' but the sample will not be interrupted by other
--- samples played later (unless all voices are being used by critical samples
--- and yet another critical sample is played).
+-- | Same behavior as 'samplePlay' except that the voice the sound is played
+-- on (if any) is given the "critical" status. Note that this will still not
+-- result in any critical samples being interrupted.
 samplePlayCritical :: SampleHandle -> Int -> IO (Maybe Voice)
 samplePlayCritical samp start = do
   v <- c_Sample_Play samp (fromIntegral start) sfxCritical
@@ -725,11 +772,14 @@ samplePlayCritical samp start = do
     then (return . Just . Voice) v
     else return Nothing
 
--- | Free a sample. You must discard the SampleHandle after this operation.
+-- | Free a sample. Do not sampleFree samples aquired via 'getModuleSamples'.
+-- Those are freed with 'playerFree'. Discard the SampleHandle after using
+-- this operation.
 sampleFree :: SampleHandle -> IO ()
 sampleFree = c_Sample_Free
 
--- | Set a voice's volume, 0 - 256. There are 257 volume levels.
+-- | Set a voice's volume to a value in the range 0 to 256. There are 257
+-- volume levels.
 voiceSetVolume :: Voice -> Int -> IO ()
 voiceSetVolume v vol = c_Voice_SetVolume (marshalVoice v) (fromIntegral vol)
 
@@ -743,16 +793,16 @@ voiceSetFrequency v freq = c_Voice_SetFrequency (marshalVoice v) (fromIntegral f
 voiceGetFrequency :: Voice -> IO Int
 voiceGetFrequency v = fromIntegral <$> c_Voice_GetFrequency (marshalVoice v)
 
--- | Set a voice's pan position. 0 is far left, 127 is center, 255 is far right.
+-- | Set a voice's pan position. 0 is far left. 127 is center. 255 is far right.
 voiceSetPanning :: Voice -> Int -> IO ()
 voiceSetPanning v pan = c_Voice_SetPanning (marshalVoice v) (fromIntegral pan)
 
 voiceGetPanning :: Voice -> IO Int
 voiceGetPanning v = fromIntegral <$> c_Voice_GetPanning (marshalVoice v)
 
--- | Play a sample on the specified voice starting from the specified position.
--- The playing sample will have the same "critical status" as the previous
--- sample played on this voice.
+-- | Play a sample on the specified voice starting from the specified position
+-- in samples. The playing sample will have the same "critical status" as the
+-- previous sample played on this voice.
 voicePlay :: Voice -> SampleHandle -> Int -> IO ()
 voicePlay v samp start = c_Voice_Play (marshalVoice v) samp (fromIntegral start)
 
@@ -760,7 +810,7 @@ voicePlay v samp start = c_Voice_Play (marshalVoice v) samp (fromIntegral start)
 voiceStop :: Voice -> IO ()
 voiceStop v = c_Voice_Stop (marshalVoice v)
 
--- | Check if a voice is currently not playing.
+-- | Returns True if and only if the specified voice is /not/ playing.
 voiceStopped :: Voice -> IO Bool
 voiceStopped v = decodeBool <$> c_Voice_Stopped (marshalVoice v)
 
