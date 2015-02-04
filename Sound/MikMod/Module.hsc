@@ -138,14 +138,14 @@ getModuleChannelVolume mod ch = do
     then fromIntegral <$> peekElemOff chans ch
     else return 0
 
--- | Set the tempo of the module. See 'playerSetTempo'.
+-- | Set the tempo of the module. See 'Sound.MikMod.playerSetTempo'.
 setModuleBPM :: ModuleHandle -> Int -> IO ()
 setModuleBPM mod bpm = (#poke MODULE, bpm) mod (fromIntegral bpm :: UWORD)
 
 getModuleBPM :: ModuleHandle -> IO Int
 getModuleBPM mod = fromIntegral <$> ((#peek MODULE, bpm) mod :: IO UWORD)
 
--- | Set the speed of the module. See 'playerSetSpeed'.
+-- | Set the speed of the module. See 'Sound.MikMod.playerSetSpeed'.
 setModuleSongSpeed :: ModuleHandle -> Int -> IO ()
 setModuleSongSpeed mod spd = (#poke MODULE, sngspd) mod (fromIntegral spd :: UBYTE)
 
