@@ -19,7 +19,7 @@ import Foreign.C.String
 
 #include <mikmod.h>
 
-foreign import ccall unsafe "mikmod.h MikMod_strerror" c_MikMod_strerror :: CInt -> IO CString
+foreign import ccall safe "mikmod.h MikMod_strerror" c_MikMod_strerror :: CInt -> IO CString
 
 -- | MikMod reports errors as either critical or not. A critical error means
 -- the system state was reset because it could not continue in the face of the

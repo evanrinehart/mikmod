@@ -99,11 +99,11 @@ newByteStringReader bs = do
         i <- readIORef rpos
         let i' = min (i+n) len
         let m = i' - i
-        let bs' = BS.take m . BS.drop i $ bs
-        let (bytes, _, _) = toForeignPtr bs'
         when (i < len) $ do
           writeIORef rpos i'
-          withForeignPtr bytes (\from -> memcpy from buf (fromIntegral m))
+          let (payloadForeignPtr, off, _) = toForeignPtr bs
+          withForeignPtr payloadForeignPtr
+            (\payload -> memcpy buf (payload `plusPtr` (off+i)) (fromIntegral m))
         return True
     , readerGet = do
         i <- readIORef rpos
@@ -132,15 +132,15 @@ newHandleReader h = MReader
   , readerRead = \to n -> do
       result <- try (BS.hGet h n) :: IO (Either IOError ByteString)
       case result of
-        Left _   -> return True
+        Left _   -> return False
         Right bs -> do
           if BS.null bs
-            then return False
+            then return True
             else do
-              let m = BS.length bs
-              let (bytes, _, _) = toForeignPtr bs
-              withForeignPtr bytes (\from -> memcpy from to (fromIntegral m))
-              return False
+              let (payloadForeignPtr, off, len) = toForeignPtr bs
+              withForeignPtr payloadForeignPtr
+                (\from -> do memcpy to (from `plusPtr` off) (fromIntegral len))
+              return True
   , readerGet = do
       bs <- BS.hGet h 1
       if BS.null bs

@@ -81,7 +81,7 @@ data MReader = MReader
     -- | Report the current read position.
   , readerTell :: IO Int
     -- | Write a number of bytes to the destination and advance the read position.
-    -- Return True if an error occurred or False otherwise. EOF is not an error.
+    -- Return False if an error occurred or True otherwise. EOF is not an error.
   , readerRead :: Ptr Word8 -> Int -> IO Bool
     -- | Return one byte and advance the read position. If an error occurs or
     -- we are at the end-of-stream, then return 'Sound.MikMod.eof'.
