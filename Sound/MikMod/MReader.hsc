@@ -10,9 +10,9 @@ import Data.ByteString (ByteString)
 import qualified Data.ByteString as BS
 import Data.ByteString.Internal (toForeignPtr, memcpy)
 import System.IO
-import Data.IORef (newIORef, readIORef, writeIORef, modifyIORef)
+import Data.IORef (IORef, newIORef, readIORef, writeIORef, modifyIORef)
 import Data.Functor ((<$>))
-import Control.Monad (when)
+import Control.Monad (when, unless)
 import Control.Exception (finally, try)
 
 import Sound.MikMod.Synonyms
@@ -35,10 +35,6 @@ foreign import ccall "wrapper" mkRead :: ReadFn -> IO (FunPtr ReadFn)
 foreign import ccall "wrapper" mkGet  :: GetFn  -> IO (FunPtr GetFn)
 foreign import ccall "wrapper" mkEof  :: EofFn  -> IO (FunPtr EofFn)
 
--- | To be returned by a readerGet if called at end-of-stream.
-eof :: Int
-eof = genericEof
-
 genericEof :: Num a => a
 genericEof = (#const EOF)
 
@@ -48,20 +44,35 @@ unmarshalSeekMode n = case n of
   (#const SEEK_CUR) -> RelativeSeek
   (#const SEEK_END) -> SeekFromEnd
 
-makeSeek :: (Int -> SeekMode -> IO Int) -> (Ptr () -> CLong -> CInt -> IO CInt)
-makeSeek act _ offset whence = fromIntegral <$> act (fromIntegral offset) (unmarshalSeekMode whence)
+makeSeek :: (Int -> SeekMode -> IO Outcome) -> (Ptr () -> CLong -> CInt -> IO CInt)
+makeSeek act _ offset whence = do
+  outcome <- act (fromIntegral offset) (unmarshalSeekMode whence)
+  case outcome of
+    Ok   -> return 0
+    Fail -> return (-1)
 
 makeTell :: IO Int -> (Ptr () -> IO CInt)
 makeTell act _ = fromIntegral <$> act
 
-makeRead :: (Ptr Word8 -> Int -> IO Bool) -> (Ptr () -> Ptr Word8 -> CSize -> IO BOOL)
-makeRead act _ dest len = encodeBool <$> act dest (fromIntegral len)
+makeRead :: (Int -> IO (Maybe ByteString)) -> (Ptr () -> Ptr Word8 -> CSize -> IO BOOL)
+makeRead act _ dest csize = do
+  let len = fromIntegral csize
+  result <- act (fromIntegral len)
+  case result of
+    Nothing -> return 0
+    Just bs -> do
+      unsafeWriteByteStringToMemoryLocation (BS.take len bs) dest
+      return 1
 
-makeGet :: IO Int -> (Ptr () -> IO CInt)
-makeGet act _ = fromIntegral <$> act
+makeGet :: IO (Maybe Word8) -> (Ptr () -> IO CInt)
+makeGet act _ = maybe genericEof fromIntegral <$> act
 
-makeEof :: IO Bool -> (Ptr () -> IO BOOL)
-makeEof act _ = encodeBool <$> act
+makeEof :: IO IsEOF -> (Ptr () -> IO BOOL)
+makeEof act _ = do
+  eof <- act
+  case eof of
+    EOF    -> return 1
+    NotEOF -> return 0
 
 -- | Allocate a MREADER and populate it with the correct function pointers.
 -- Run the action on the MREADER and free it all even if an error occurs.
@@ -84,67 +95,72 @@ withMReader mr action = allocaBytes (#size MREADER) $ \ptr -> do
     freeHaskellFunPtr fp4
     freeHaskellFunPtr fp5
 
--- | Create an MReader from a ByteString. 
-newByteStringReader :: ByteString -> IO MReader
-newByteStringReader bs = do
-  let len = BS.length bs
-  rpos <- newIORef 0
-  return $ MReader
-    { readerTell = readIORef rpos
-    , readerSeek = \n whence -> case whence of
-        AbsoluteSeek -> writeIORef rpos n >> return 0
-        RelativeSeek -> modifyIORef rpos (+n) >> return 0
-        SeekFromEnd  -> writeIORef rpos (len - n) >> return 0
-    , readerRead = \buf n -> do
-        i <- readIORef rpos
-        let i' = min (i+n) len
-        let m = i' - i
-        when (i < len) $ do
+-- | Make an MReader from a ByteString and a mutable variable for the
+-- read position.
+byteStringReader :: ByteString -> IORef Int -> MReader
+byteStringReader bs rpos = let len = BS.length bs in MReader
+  { readerSeek = \n whence -> do
+      case whence of
+        AbsoluteSeek -> writeIORef  rpos n
+        RelativeSeek -> modifyIORef rpos (+n)
+        SeekFromEnd  -> writeIORef  rpos (len - n)
+      return Ok
+  , readerTell = readIORef rpos
+  , readerRead = \n -> do
+      i <- readIORef rpos
+      let i' = min (i+n) len
+      let m = i' - i
+      if i < len
+        then do
           writeIORef rpos i'
-          let (payloadForeignPtr, off, _) = toForeignPtr bs
-          withForeignPtr payloadForeignPtr
-            (\payload -> memcpy buf (payload `plusPtr` (off+i)) (fromIntegral m))
-        return True
-    , readerGet = do
-        i <- readIORef rpos
-        if (i >= 0 && i < len)
-          then do
-            modifyIORef rpos (+1)
-            return $ fromIntegral (BS.index bs i)
-          else return eof
-   ,  readerEof = do
-        i <- readIORef rpos
-        if (i >= 0 && i < len)
-          then return False
-          else return True
-    }
+          (return . Just . BS.take m . BS.drop i) bs
+        else return (Just BS.empty)
+  , readerGet = do
+      i <- readIORef rpos
+      if (i >= 0 && i < len)
+        then do
+          modifyIORef rpos (+1)
+          (return . Just . fromIntegral) (BS.index bs i)
+        else return Nothing
+ ,  readerEof = do
+      i <- readIORef rpos
+      if (i >= 0 && i < len)
+        then return NotEOF
+        else return EOF
+  }
 
 
 -- | Wrap a Handle so it works like an MReader.
-newHandleReader :: Handle -> MReader
-newHandleReader h = MReader
+handleReader :: Handle -> MReader
+handleReader h = MReader
   { readerSeek = \n whence -> do
       result <- try (hSeek h whence (fromIntegral n)) :: IO (Either IOError ())
       case result of
-        Left _  -> return (-1)
-        Right _ -> return 0
+        Left _  -> return Fail
+        Right _ -> return Ok
   , readerTell = fromIntegral <$> hTell h
-  , readerRead = \to n -> do
+  , readerRead = \n -> do
       result <- try (BS.hGet h n) :: IO (Either IOError ByteString)
       case result of
-        Left _   -> return False
-        Right bs -> do
-          if BS.null bs
-            then return True
-            else do
-              let (payloadForeignPtr, off, len) = toForeignPtr bs
-              withForeignPtr payloadForeignPtr
-                (\from -> do memcpy to (from `plusPtr` off) (fromIntegral len))
-              return True
+        Left _   -> return Nothing
+        Right bs -> return (Just bs)
   , readerGet = do
       bs <- BS.hGet h 1
       if BS.null bs
-        then return eof
-        else return (fromIntegral . BS.head $ bs)
-  , readerEof = hIsEOF h
+        then return Nothing
+        else (return . Just . fromIntegral . BS.head) bs
+  , readerEof = do
+      b <- hIsEOF h
+      case b of
+        True  -> return EOF
+        False -> return NotEOF
   }
+
+
+unsafeWriteByteStringToMemoryLocation :: ByteString -> Ptr Word8 -> IO ()
+unsafeWriteByteStringToMemoryLocation bs dest =
+  unless (BS.null bs) $ do
+    let (fptr, offset, len) = toForeignPtr bs
+    withForeignPtr fptr
+      (\ptr -> memcpy dest (ptr `plusPtr` offset) (fromIntegral len))
+

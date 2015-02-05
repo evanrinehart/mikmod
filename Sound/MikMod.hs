@@ -169,9 +169,10 @@ module Sound.MikMod
 
   -- * MReaders
   MReader(..),
-  newByteStringReader,
-  newHandleReader,
-  eof,
+  Outcome(..),
+  IsEOF(..),
+  byteStringReader,
+  handleReader,
 
   -- * Errors
   MikModError(..),
@@ -255,7 +256,7 @@ import Sound.MikMod.Sample
 --   playerStart mod
 --   whileM_ playerActive $ do
 --     mikmodUpdate -- might be unnecessary on your system
---     threadDelay 100000
+--     threadDelay 10000
 --   playerFree mod
 --   mikmodExit
 -- @
@@ -281,7 +282,7 @@ import Sound.MikMod.Sample
 --   Just voice <- samplePlay samp 0
 --   whileM_ (not \<$\> voiceStopped voice) $ do
 --     mikmodUpdate -- might be unnecessary on your system
---     threadDelay 100000
+--     threadDelay 10000
 --   sampleFree samp
 --   mikmodExit
 -- @
@@ -299,7 +300,7 @@ import Sound.MikMod.Sample
 --   Just voice <- samplePlay samp 0
 --   whileM_ (not \<$\> voiceStopped voice) $ do
 --     mikmodUpdate
---     threadDelay 100000
+--     threadDelay 10000
 --   sampleFree samp
 -- @
 
