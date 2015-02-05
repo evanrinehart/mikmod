@@ -3,7 +3,7 @@ for playback of tracker music and sound effects.
 
 For more information about using this library see the haddock API documentation.
 
-```
+```haskell
 import Control.Concurrent (threadDelay)
 import Control.Monad.Loops (whileM_)
 import Sound.MikMod
