@@ -543,13 +543,13 @@ mikmodSetNumVoicesSafe music sample = do
 -- out. If you call this too often, the audio driver may eat CPU in a busy loop.
 -- Higher quality audio requires calling mikmodUpdate more often (see
 -- 'mikmodSetMixFreq'). And finally, on some drivers this is a no-op because
--- there is a fill thread.
+-- there is an audio callback.
 --
 -- Known:
 --
--- - On OSX there is a fill thread and polling mikmodUpdate is unnecessary.
+-- - On OSX there is an audio callback and polling mikmodUpdate is unnecessary.
 --
--- - On Linux ALSA there is /no/ fill thread and polling mikmodUpdate is necessary.
+-- - On Linux mikmodUpdate triggers ALSA's non-blocking IO API and is necessary.
 mikmodUpdate :: IO ()
 mikmodUpdate = c_MikMod_Update
 
