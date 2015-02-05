@@ -3,3 +3,5 @@
 .gitignore
 dist
 junk
+.cabal-sandbox/
+cabal.sandbox.config
