@@ -178,7 +178,8 @@ module Sound.MikMod
   MikModError(..),
   MikModException(..),
   describeMikModError,
-  isNotAnError,
+  getErrno,
+  MikModErrno(..),
 
   -- * Esoterica
   mikmodInitThreads,
