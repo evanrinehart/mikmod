@@ -499,7 +499,7 @@ mikmodRegisterAllLoaders :: IO ()
 mikmodRegisterAllLoaders = c_MikMod_RegisterAllLoaders
 
 -- | Reset the driver using the new global variable settings.
--- If the driver has not been initialized, it will be now. Throw a
+-- If the driver has not been initialized, it will be now. Throws a
 -- MikModError in case of failure.
 mikmodReset :: String -> IO ()
 mikmodReset params = do
