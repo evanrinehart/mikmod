@@ -241,6 +241,9 @@ import Sound.MikMod.Sample
 -- and one that returns an Either.
 --
 -- The MikMod error callback mechanism and the MWriter are not supported yet.
+--
+-- Beware of using 'playerLoad' while a song is playing. It has the side effect
+-- of adjusting the number of music voices (see 'mikmodSetNumVoices')!
 
 -- $quickstart
 --
@@ -519,9 +522,10 @@ mikmodResetSafe params = withCString params $ \ptr -> do
 -- | Set the number of music voices and sample voices to be used for playback.
 -- If either parameter is -1, the currently set value will be retained.
 --
--- In particular the number of music voices is handled by the module player
--- so probably shouldn't be manipulated. If this operation fails it will throw
--- a MikModError.
+-- This is executed by 'playerLoad' as a side effect of loading a module to
+-- set the number of music voices.
+--
+-- If this operation fails it will throw a MikModError.
 mikmodSetNumVoices :: Int -- ^ Number of music voices or -1
                    -> Int -- ^ Number of sample voices or -1
                    -> IO ()
@@ -578,9 +582,22 @@ playerGetModule = do
     then pure Nothing
     else pure (Just ptr)
 
--- | Load a module from a file. The second argument is the maximum number of
--- channels to allow. If something goes wrong while loading the module it will
--- throw a MikModError.
+-- | Load a module from a file.
+--
+-- The second argument is the maximum number of channels to allow. Basic 4
+-- channel mods only need 4 music voices. But some impulse tracker modules
+-- use a large number of extra channels for new note actions (NNAs). Only the
+-- amount needed will be allocated so using a large value here like 64 doesn't
+-- hurt.
+--
+-- This operation has side effects. When the module is loaded the number of
+-- music voices will be adjusted (see 'mikmodSetNumVoices') to accommodate the
+-- song. If a song is already playing that needs more voices than the song
+-- being loaded, you will hear a reduction in music quality!
+-- If want to load many ModuleHandles then use 'mikmodSetNumVoices' afterward
+-- to set the number of music voices to some upper bound for the group.
+--
+-- If something goes wrong while loading the module it will throw a MikModError.
 playerLoad :: FilePath -> Int -> CuriousFlag -> IO ModuleHandle
 playerLoad path maxChans curious = do
   r <- playerLoadSafe path maxChans curious
