@@ -28,7 +28,7 @@ library
   other-extensions:    ForeignFunctionInterface, EmptyDataDecls
   
   -- Other library packages from which modules are imported.
-  build-depends:       base >=4.7 && <4.8, bytestring
+  build-depends:       base >=4.7 && <4.9, bytestring
   
   -- Directories containing source files.
   -- hs-source-dirs:      
