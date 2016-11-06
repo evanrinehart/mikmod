@@ -6,7 +6,7 @@ name:                mikmod
 -- PVP summary:      +-+------- breaking API changes
 --                   | | +----- non-breaking API additions
 --                   | | | +--- code changes with no API change
-version:             0.2.0.1
+version:             0.2.0.2
 synopsis:            MikMod bindings
 description:         MikMod bindings for Haskell
 homepage:            https://github.com/evanrinehart/mikmod
@@ -28,7 +28,7 @@ library
   other-extensions:    ForeignFunctionInterface, EmptyDataDecls
   
   -- Other library packages from which modules are imported.
-  build-depends:       base >=4.7 && <4.9, bytestring
+  build-depends:       base >=4.7 && <4.10, bytestring
   
   -- Directories containing source files.
   -- hs-source-dirs:      
@@ -48,4 +48,4 @@ source-repository head
 source-repository this
   type: git
   location: https://github.com/evanrinehart/mikmod
-  tag: 0.2.0.1
+  tag: 0.2.0.2
